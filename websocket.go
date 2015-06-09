@@ -1,7 +1,9 @@
 package turnpike
 
 import (
+	"crypto/tls"
 	"fmt"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -13,14 +15,14 @@ type websocketPeer struct {
 }
 
 // NewWebsocketPeer connects to the websocket server at the specified url.
-func NewWebsocketPeer(serialization Serialization, url, origin string) (Peer, error) {
+func NewWebsocketPeer(serialization Serialization, url, origin string, tlsconfig *tls.Config) (Peer, error) {
 	switch serialization {
 	case JSON:
-		return newWebsocketPeer(url, jsonWebsocketProtocol, origin,
+		return newWebsocketPeer(url, jsonWebsocketProtocol, origin, tlsconfig,
 			new(JSONSerializer), websocket.TextMessage,
 		)
 	case MSGPACK:
-		return newWebsocketPeer(url, msgpackWebsocketProtocol, origin,
+		return newWebsocketPeer(url, msgpackWebsocketProtocol, origin, tlsconfig,
 			new(MessagePackSerializer), websocket.BinaryMessage,
 		)
 	default:
@@ -28,9 +30,10 @@ func NewWebsocketPeer(serialization Serialization, url, origin string) (Peer, er
 	}
 }
 
-func newWebsocketPeer(url, protocol, origin string, serializer Serializer, payloadType int) (Peer, error) {
+func newWebsocketPeer(url, protocol, origin string, tlsconfig *tls.Config, serializer Serializer, payloadType int) (Peer, error) {
 	dialer := websocket.Dialer{
-		Subprotocols: []string{protocol},
+		Subprotocols:    []string{protocol},
+		TLSClientConfig: tlsconfig,
 	}
 	conn, _, err := dialer.Dial(url, nil)
 	if err != nil {

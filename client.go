@@ -1,6 +1,7 @@
 package turnpike
 
 import (
+	"crypto/tls"
 	"fmt"
 	"time"
 )
@@ -52,8 +53,8 @@ type Client struct {
 }
 
 // Creates a new websocket client.
-func NewWebsocketClient(serialization Serialization, url string) (*Client, error) {
-	p, err := NewWebsocketPeer(serialization, url, "")
+func NewWebsocketClient(serialization Serialization, url string, tlsconfig *tls.Config) (*Client, error) {
+	p, err := NewWebsocketPeer(serialization, url, "", tlsconfig)
 	if err != nil {
 		return nil, err
 	}
