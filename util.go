@@ -63,7 +63,7 @@ const (
 )
 
 const (
-	maxId = 1 << 53
+	maxId = 1 << 29
 )
 
 func init() {
