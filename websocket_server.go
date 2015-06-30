@@ -135,10 +135,11 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 	}
 
 	peer := websocketPeer{
-		conn:        conn,
-		serializer:  serializer,
-		messages:    make(chan Message, 10),
-		payloadType: payloadType,
+		conn:         conn,
+		serializer:   serializer,
+		messages:     make(chan Message, 10),
+		disconnected: make(chan bool),
+		payloadType:  payloadType,
 	}
 	go func() {
 		for {
@@ -146,6 +147,7 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 			// TODO: do something different based on binary/text frames
 			if _, b, err := conn.ReadMessage(); err != nil {
 				log.Printf("Client at remote address %s disconnected\n", conn.RemoteAddr().String())
+				peer.disconnected <- true
 				conn.Close()
 				break
 			} else {

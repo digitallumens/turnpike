@@ -27,12 +27,17 @@ func localPipe() (*localPeer, *localPeer) {
 }
 
 type localPeer struct {
-	outgoing chan<- Message
-	incoming <-chan Message
+	outgoing     chan<- Message
+	incoming     <-chan Message
+	disconnected <-chan bool
 }
 
 func (s *localPeer) Receive() <-chan Message {
 	return s.incoming
+}
+
+func (s *localPeer) Disconnected() <-chan bool {
+	return s.disconnected
 }
 
 func (s *localPeer) Send(msg Message) error {

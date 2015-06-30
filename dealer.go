@@ -6,6 +6,8 @@ type Dealer interface {
 	Register(Sender, *Register)
 	// Unregister a procedure on an endpoint
 	Unregister(Sender, *Unregister)
+	// Unregister all registered procedures on an endpoint
+	Disconnect(Sender)
 	// Call a procedure on an endpoint
 	Call(Sender, *Call)
 	// Return the result of a procedure call
@@ -74,6 +76,26 @@ func (d *defaultDealer) Unregister(callee Sender, msg *Unregister) {
 	}
 }
 
+func (d *defaultDealer) Disconnect(callee Sender) {
+	proceduresToDelete := make([]RemoteProcedure, 1)
+	registrationsToDelete := make([]ID, 1)
+	// Search d.procedures for callee
+	for reg, rp := range d.procedures {
+		if rp.Endpoint == callee {
+			log.Println("Unregistering procedure", rp.Procedure)
+			proceduresToDelete = append(proceduresToDelete, rp)
+			registrationsToDelete = append(registrationsToDelete, reg)
+		}
+	}
+	// Delete procedures and registrations
+	for _, p := range proceduresToDelete {
+		delete(d.registrations, p.Procedure)
+	}
+	for _, r := range registrationsToDelete {
+		delete(d.procedures, r)
+	}
+}
+
 func (d *defaultDealer) Call(caller Sender, msg *Call) {
 	if reg, ok := d.registrations[msg.Procedure]; !ok {
 		caller.Send(&Error{
@@ -98,7 +120,7 @@ func (d *defaultDealer) Call(caller Sender, msg *Call) {
 			rproc.Endpoint.Send(&Invocation{
 				Request:      invocationID,
 				Registration: reg,
-				Details: map[string]interface{}{},
+				Details:      map[string]interface{}{},
 				Arguments:    msg.Arguments,
 				ArgumentsKw:  msg.ArgumentsKw,
 			})

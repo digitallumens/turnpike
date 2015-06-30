@@ -93,12 +93,16 @@ func (r *defaultRouter) handleSession(sess Session, realmURI URI) {
 		select {
 		case msg, open = <-c:
 			if !open {
-				log.Printf("Session closed:%d\n", sess.Id)
 				return
 			}
 		case reason := <-sess.kill:
 			sess.Send(&Goodbye{Reason: reason, Details: make(map[string]interface{})})
 			// TODO: wait for client Goodbye?
+			return
+		case _ = <-sess.Disconnected():
+			log.Println("Disconnecting session:", sess.Id)
+			// TODO: remove disconnected session from realm's broker lists
+			realm.Dealer.Disconnect(sess.Peer)
 			return
 		}
 

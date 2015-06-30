@@ -8,10 +8,11 @@ import (
 )
 
 type websocketPeer struct {
-	conn        *websocket.Conn
-	serializer  Serializer
-	messages    chan Message
-	payloadType int
+	conn         *websocket.Conn
+	serializer   Serializer
+	messages     chan Message
+	disconnected chan bool
+	payloadType  int
 }
 
 // NewWebsocketPeer connects to the websocket server at the specified url.
@@ -40,10 +41,11 @@ func newWebsocketPeer(url, protocol, origin string, tlsconfig *tls.Config, seria
 		return nil, err
 	}
 	ep := &websocketPeer{
-		conn:        conn,
-		messages:    make(chan Message, 10),
-		serializer:  serializer,
-		payloadType: payloadType,
+		conn:         conn,
+		messages:     make(chan Message, 10),
+		disconnected: make(chan bool),
+		serializer:   serializer,
+		payloadType:  payloadType,
 	}
 	go func() {
 		for {
@@ -74,6 +76,9 @@ func (ep *websocketPeer) Send(msg Message) error {
 }
 func (ep *websocketPeer) Receive() <-chan Message {
 	return ep.messages
+}
+func (ep *websocketPeer) Disconnected() <-chan bool {
+	return ep.disconnected
 }
 func (ep *websocketPeer) Close() error {
 	return ep.conn.Close()
