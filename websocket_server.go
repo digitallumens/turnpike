@@ -2,6 +2,7 @@ package turnpike
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -145,6 +146,7 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 			// TODO: use conn.NextMessage() and stream
 			// TODO: do something different based on binary/text frames
 			if _, b, err := conn.ReadMessage(); err != nil {
+				fmt.Printf("Error reading message from remote address %s\n", conn.RemoteAddr().String())
 				conn.Close()
 				break
 			} else {
