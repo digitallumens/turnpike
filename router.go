@@ -93,7 +93,7 @@ func (r *defaultRouter) handleSession(sess Session, realmURI URI) {
 		select {
 		case msg, open = <-c:
 			if !open {
-				log.Info("Session closed:", sess.Id)
+				log.Printf("Session closed:%d\n", sess.Id)
 				return
 			}
 		case reason := <-sess.kill:

@@ -145,7 +145,7 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 			// TODO: use conn.NextMessage() and stream
 			// TODO: do something different based on binary/text frames
 			if _, b, err := conn.ReadMessage(); err != nil {
-				log.Infof("Client at remote address %s disconnected", conn.RemoteAddr().String())
+				log.Printf("Client at remote address %s disconnected\n", conn.RemoteAddr().String())
 				conn.Close()
 				break
 			} else {
