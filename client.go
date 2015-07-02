@@ -75,7 +75,7 @@ func NewWebsocketClient(serialization Serialization, url string, tlsconfig *tls.
 func NewClient(p Peer) *Client {
 	c := &Client{
 		Peer:           p,
-		ReceiveTimeout: 5 * time.Second,
+		ReceiveTimeout: 30 * time.Second,
 		// roles:          roles,
 		listeners:    make(map[ID]chan Message),
 		events:       make(map[ID]*eventDesc),
