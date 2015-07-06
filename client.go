@@ -226,7 +226,7 @@ func (c *Client) Receive() {
 			if event, ok := c.events[msg.Subscription]; ok {
 				go event.handler(msg.Arguments, msg.ArgumentsKw)
 			} else {
-				log.Println("no handler registered for subscription:", msg.Subscription)
+				log.Error("no handler registered for subscription:", msg.Subscription)
 			}
 
 		case *Invocation:
@@ -251,10 +251,10 @@ func (c *Client) Receive() {
 			c.notifyListener(msg, msg.Request)
 
 		default:
-			log.Println("unhandled message:", msg.MessageType(), msg)
+			log.Error("unhandled message:", msg.MessageType(), msg)
 		}
 	}
-	log.Fatal("Receive buffer closed")
+	log.Error("Receive buffer closed")
 }
 
 func (c *Client) notifyListener(msg Message, requestId ID) {
@@ -262,7 +262,7 @@ func (c *Client) notifyListener(msg Message, requestId ID) {
 	if l, ok := c.listeners[requestId]; ok {
 		l <- msg
 	} else {
-		log.Println("no listener for message", msg.MessageType(), requestId)
+		log.Error("no listener for message", msg.MessageType(), requestId)
 	}
 }
 
@@ -291,22 +291,22 @@ func (c *Client) handleInvocation(msg *Invocation) {
 			}
 
 			if err := c.Send(tosend); err != nil {
-				log.Fatal(err)
+				log.Error(err.Error())
 			}
 		}()
 	} else {
-		log.Println("no handler registered for registration:", msg.Registration)
+		log.Error("no handler registered for registration:", msg.Registration)
 	}
 }
 
 func (c *Client) registerListener(id ID) {
-	log.Println("register listener:", id)
+	log.Info("register listener: %v", id)
 	wait := make(chan Message, 1)
 	c.listeners[id] = wait
 }
 
 func (c *Client) waitOnListener(id ID) (msg Message, err error) {
-	log.Println("wait on listener:", id)
+	log.Info("wait on listener: %v", id)
 	if wait, ok := c.listeners[id]; !ok {
 		return nil, fmt.Errorf("unknown listener ID: %v", id)
 	} else {

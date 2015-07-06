@@ -100,13 +100,13 @@ func (r *defaultRouter) handleSession(sess Session, realmURI URI) {
 			// TODO: wait for client Goodbye?
 			return
 		case _ = <-sess.Disconnected():
-			log.Println("Disconnecting session:", sess.Id)
+			log.Info("Disconnecting session:", sess.Id)
 			// TODO: remove disconnected session from realm's broker lists
 			realm.Dealer.Disconnect(sess.Peer)
 			return
 		}
 
-		log.Println(sess.Id, msg.MessageType(), msg)
+		log.Info("%d %d %v", sess.Id, msg.MessageType(), msg)
 
 		switch msg := msg.(type) {
 		case *Goodbye:
@@ -132,7 +132,7 @@ func (r *defaultRouter) handleSession(sess Session, realmURI URI) {
 			realm.Dealer.Yield(sess.Peer, msg)
 
 		default:
-			log.Println("Unhandled message:", msg.MessageType())
+			log.Error("Unhandled message:", msg.MessageType())
 		}
 	}
 }
@@ -190,7 +190,7 @@ func (r *defaultRouter) Accept(client Peer) error {
 			if err := client.Send(welcome); err != nil {
 				return err
 			}
-			log.Println("Established session:", id)
+			log.Info("Established session:", id)
 
 			sess := Session{Peer: client, Id: id, kill: make(chan URI, 1)}
 			r.clients[hello.Realm] = append(r.clients[hello.Realm], sess)

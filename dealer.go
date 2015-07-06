@@ -82,7 +82,7 @@ func (d *defaultDealer) Disconnect(callee Sender) {
 	// Search d.procedures for callee
 	for reg, rp := range d.procedures {
 		if rp.Endpoint == callee {
-			log.Println("Unregistering procedure", rp.Procedure)
+			log.Info("Unregistering procedure", rp.Procedure)
 			proceduresToDelete = append(proceduresToDelete, rp)
 			registrationsToDelete = append(registrationsToDelete, reg)
 		}

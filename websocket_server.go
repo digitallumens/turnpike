@@ -44,7 +44,7 @@ type WebsocketServer struct {
 
 // Creates a new WebsocketServer from a map of realms
 func NewWebsocketServer(realms map[string]Realm) (*WebsocketServer, error) {
-	log.Println("NewWebsocketServer")
+	log.Info("NewWebsocketServer")
 	r := NewDefaultRouter()
 	for uri, realm := range realms {
 		if err := r.RegisterRealm(URI(uri), realm); err != nil {
@@ -57,7 +57,7 @@ func NewWebsocketServer(realms map[string]Realm) (*WebsocketServer, error) {
 
 // Creates a new WebsocketServer with a single basic realm
 func NewBasicWebsocketServer(uri string) *WebsocketServer {
-	log.Println("NewBasicWebsocketServer")
+	log.Info("NewBasicWebsocketServer")
 	s, _ := NewWebsocketServer(map[string]Realm{uri: {}})
 	return s
 }
@@ -75,7 +75,7 @@ func newWebsocketServer(r Router) *WebsocketServer {
 
 // RegisterProtocol registers a serializer that should be used for a given protocol string and payload type.
 func (s *WebsocketServer) RegisterProtocol(proto string, payloadType int, serializer Serializer) error {
-	log.Println("RegisterProtocol:", proto)
+	log.Info("RegisterProtocol: %s", proto)
 	if payloadType != websocket.TextMessage && payloadType != websocket.BinaryMessage {
 		return invalidPayload(payloadType)
 	}
@@ -100,11 +100,11 @@ func (s *WebsocketServer) GetLocalClient(realm string) (*Client, error) {
 
 // ServeHTTP handles a new HTTP connection.
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Println("WebsocketServer.ServeHTTP", r.Method, r.RequestURI)
+	log.Info("WebsocketServer.ServeHTTP", r.Method, r.RequestURI)
 	// TODO: subprotocol?
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println("Error upgrading to websocket connection:", err)
+		log.Error("Error upgrading to websocket connection:", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -146,7 +146,7 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 			// TODO: use conn.NextMessage() and stream
 			// TODO: do something different based on binary/text frames
 			if _, b, err := conn.ReadMessage(); err != nil {
-				log.Printf("Client at remote address %s disconnected\n", conn.RemoteAddr().String())
+				log.Info("Client at remote address %s disconnected\n", conn.RemoteAddr().String())
 				peer.disconnected <- true
 				conn.Close()
 				break

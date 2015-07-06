@@ -20,7 +20,7 @@ type Realm struct {
 // Authenticate either authenticates a client or returns a challenge message if
 // challenge/response authentication is to be used.
 func (r Realm) Authenticate(details map[string]interface{}) (Message, error) {
-	log.Println("details:", details)
+	log.Info("details:", details)
 	if len(r.Authenticators) == 0 && len(r.CRAuthenticators) == 0 {
 		return &Welcome{}, nil
 	}
@@ -36,7 +36,7 @@ func (r Realm) Authenticate(details map[string]interface{}) (Message, error) {
 		if m, ok := method.(string); ok {
 			authmethods = append(authmethods, m)
 		} else {
-			log.Printf("invalid authmethod value: %v", method)
+			log.Error("invalid authmethod value: %v", method)
 		}
 	}
 	for _, method := range authmethods {
