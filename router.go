@@ -106,7 +106,7 @@ func (r *defaultRouter) handleSession(sess Session, realmURI URI) {
 			return
 		}
 
-		log.Info("%d %d %v", sess.Id, msg.MessageType(), msg)
+		log.Info("%d %d %v", sess.Id, msg.MessageType().String(), msg)
 
 		switch msg := msg.(type) {
 		case *Goodbye:
