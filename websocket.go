@@ -72,7 +72,7 @@ func (ep *websocketPeer) Send(msg Message) error {
 	if err != nil {
 		return err
 	}
-	log.Info("%d %v", msg.MessageType().String(), msg)
+	log.Info("%s %+v", msg.MessageType().String(), msg)
 	return ep.conn.WriteMessage(ep.payloadType, b)
 }
 func (ep *websocketPeer) Receive() <-chan Message {
