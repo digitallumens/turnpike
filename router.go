@@ -100,12 +100,12 @@ func (r *defaultRouter) handleSession(sess Session, realmURI URI) {
 		select {
 		case msg, open = <-c:
 			if !open {
-				log.Println("lost session:", sess.Id)
+				log.Error("lost session:", sess.Id)
 				return
 			}
 		case reason := <-sess.kill:
 			sess.Send(&Goodbye{Reason: reason, Details: make(map[string]interface{})})
-			log.Println("kill session:", sess.Id)
+			log.Error("kill session:", sess.Id)
 			// TODO: wait for client Goodbye?
 			return
 		case _ = <-sess.Disconnected():

@@ -260,14 +260,14 @@ func (c *Client) Receive() {
 			c.notifyListener(msg, msg.Request)
 
 		case *Goodbye:
-			log.Println("client received Goodbye message")
+			log.Info("client received Goodbye message")
 			break
 
 		default:
 			log.Error("unhandled message:", msg.MessageType(), msg)
 		}
 	}
-	log.Println("client closed")
+	log.Info("client closed")
 }
 
 func (c *Client) notifyListener(msg Message, requestId ID) {
@@ -304,18 +304,18 @@ func (c *Client) handleInvocation(msg *Invocation) {
 			}
 
 			if err := c.Send(tosend); err != nil {
-				log.Println("error sending message:", err)
+				log.Error("error sending message:", err)
 			}
 		}()
 	} else {
-		log.Println("no handler registered for registration:", msg.Registration)
+		log.Error("no handler registered for registration:", msg.Registration)
 		if err := c.Send(&Error{
 			Type:    INVOCATION,
 			Request: msg.Request,
 			Details: make(map[string]interface{}),
 			Error:   URI(fmt.Sprintf("no handler for registration: %v", msg.Registration)),
 		}); err != nil {
-			log.Println("error sending message:", err)
+			log.Error("error sending message:", err)
 		}
 	}
 }
@@ -409,44 +409,6 @@ func (c *Client) Unsubscribe(topic string) error {
 	return nil
 }
 
-// Unsubscribe removes the registered EventHandler from the topic.
-func (c *Client) Unsubscribe(topic string) error {
-	var (
-		subscriptionID ID
-		found          bool
-	)
-	for id, desc := range c.events {
-		if desc.topic == topic {
-			subscriptionID = id
-			found = true
-		}
-	}
-	if !found {
-		return fmt.Errorf("Event %s is not registered with this client.", topic)
-	}
-
-	id := c.nextID()
-	c.registerListener(id)
-	sub := &Unsubscribe{
-		Request:      id,
-		Subscription: subscriptionID,
-	}
-	if err := c.Send(sub); err != nil {
-		return err
-	}
-	// wait to receive UNSUBSCRIBED message
-	msg, err := c.waitOnListener(id)
-	if err != nil {
-		return err
-	} else if e, ok := msg.(*Error); ok {
-		return fmt.Errorf("error unsubscribing to topic '%v': %v", topic, e.Error)
-	} else if _, ok := msg.(*Unsubscribed); !ok {
-		return fmt.Errorf(formatUnexpectedMessage(msg, UNSUBSCRIBED))
-	}
-	delete(c.events, subscriptionID)
-	return nil
-}
-
 // MethodHandler is an RPC endpoint.
 type MethodHandler func(args []interface{}, kwargs map[string]interface{}) (result *CallResult)
 
@@ -493,11 +455,8 @@ func (c *Client) Unregister(procedure string) error {
 	if !found {
 		return fmt.Errorf("Procedure %s is not registered with this client.", procedure)
 	}
-<<<<<<< HEAD
-	id := c.nextID()
-=======
 	id := NewID()
->>>>>>> upstream/v2
+
 	c.registerListener(id)
 	unregister := &Unregister{
 		Request:      id,
