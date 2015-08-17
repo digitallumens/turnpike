@@ -76,6 +76,7 @@ func NewClient(p Peer) *Client {
 	c := &Client{
 		Peer:           p,
 		ReceiveTimeout: 30 * time.Second,
+
 		// roles:          roles,
 		listeners:    make(map[ID]chan Message),
 		events:       make(map[ID]*eventDesc),
@@ -199,20 +200,28 @@ func formatUnknownMap(m map[string]interface{}) string {
 }
 
 // LeaveRealm leaves the current realm without closing the connection to the server.
-func (c *Client) LeaveRealm() {
-	c.Send(goodbyeClient)
+func (c *Client) LeaveRealm() error {
+	if err := c.Send(goodbyeClient); err != nil {
+		return fmt.Errorf("error leaving realm: %v", err)
+	}
+	return nil
 }
 
 // Close closes the connection to the server.
-func (c *Client) Close() {
-	c.Send(goodbyeClient)
-	c.Peer.Close()
+func (c *Client) Close() error {
+	if err := c.LeaveRealm(); err != nil {
+		return err
+	}
+	if err := c.Peer.Close(); err != nil {
+		return fmt.Errorf("error closing client connection: %v", err)
+	}
+	return nil
 }
 
-func (c *Client) nextID() ID {
-	c.requestCount++
-	return ID(c.requestCount)
-}
+// func (c *Client) nextID() ID {
+// 	c.requestCount++
+// 	return ID(c.requestCount)
+// }
 
 // Receive handles messages from the server until this client disconnects.
 //
@@ -250,11 +259,15 @@ func (c *Client) Receive() {
 		case *Error:
 			c.notifyListener(msg, msg.Request)
 
+		case *Goodbye:
+			log.Println("client received Goodbye message")
+			break
+
 		default:
 			log.Error("unhandled message:", msg.MessageType(), msg)
 		}
 	}
-	log.Error("Receive buffer closed")
+	log.Println("client closed")
 }
 
 func (c *Client) notifyListener(msg Message, requestId ID) {
@@ -291,11 +304,19 @@ func (c *Client) handleInvocation(msg *Invocation) {
 			}
 
 			if err := c.Send(tosend); err != nil {
-				log.Error(err.Error())
+				log.Println("error sending message:", err)
 			}
 		}()
 	} else {
-		log.Error("no handler registered for registration:", msg.Registration)
+		log.Println("no handler registered for registration:", msg.Registration)
+		if err := c.Send(&Error{
+			Type:    INVOCATION,
+			Request: msg.Request,
+			Details: make(map[string]interface{}),
+			Error:   URI(fmt.Sprintf("no handler for registration: %v", msg.Registration)),
+		}); err != nil {
+			log.Println("error sending message:", err)
+		}
 	}
 }
 
@@ -325,7 +346,7 @@ type EventHandler func(args []interface{}, kwargs map[string]interface{})
 
 // Subscribe registers the EventHandler to be called for every message in the provided topic.
 func (c *Client) Subscribe(topic string, fn EventHandler) error {
-	id := c.nextID()
+	id := NewID()
 	c.registerListener(id)
 	sub := &Subscribe{
 		Request: id,
@@ -347,6 +368,44 @@ func (c *Client) Subscribe(topic string, fn EventHandler) error {
 		// register the event handler with this subscription
 		c.events[subscribed.Subscription] = &eventDesc{topic, fn}
 	}
+	return nil
+}
+
+// Unsubscribe removes the registered EventHandler from the topic.
+func (c *Client) Unsubscribe(topic string) error {
+	var (
+		subscriptionID ID
+		found          bool
+	)
+	for id, desc := range c.events {
+		if desc.topic == topic {
+			subscriptionID = id
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("Event %s is not registered with this client.", topic)
+	}
+
+	id := NewID()
+	c.registerListener(id)
+	sub := &Unsubscribe{
+		Request:      id,
+		Subscription: subscriptionID,
+	}
+	if err := c.Send(sub); err != nil {
+		return err
+	}
+	// wait to receive UNSUBSCRIBED message
+	msg, err := c.waitOnListener(id)
+	if err != nil {
+		return err
+	} else if e, ok := msg.(*Error); ok {
+		return fmt.Errorf("error unsubscribing to topic '%v': %v", topic, e.Error)
+	} else if _, ok := msg.(*Unsubscribed); !ok {
+		return fmt.Errorf(formatUnexpectedMessage(msg, UNSUBSCRIBED))
+	}
+	delete(c.events, subscriptionID)
 	return nil
 }
 
@@ -393,7 +452,7 @@ type MethodHandler func(args []interface{}, kwargs map[string]interface{}) (resu
 
 // Register registers a procedure with the router.
 func (c *Client) Register(procedure string, fn MethodHandler) error {
-	id := c.nextID()
+	id := NewID()
 	c.registerListener(id)
 	register := &Register{
 		Request:   id,
@@ -409,7 +468,7 @@ func (c *Client) Register(procedure string, fn MethodHandler) error {
 	if err != nil {
 		return err
 	} else if e, ok := msg.(*Error); ok {
-		return fmt.Errorf("error registering to procedure '%v': %v", procedure, e.Error)
+		return fmt.Errorf("error registering procedure '%v': %v", procedure, e.Error)
 	} else if registered, ok := msg.(*Registered); !ok {
 		return fmt.Errorf(formatUnexpectedMessage(msg, REGISTERED))
 	} else {
@@ -434,7 +493,11 @@ func (c *Client) Unregister(procedure string) error {
 	if !found {
 		return fmt.Errorf("Procedure %s is not registered with this client.", procedure)
 	}
+<<<<<<< HEAD
 	id := c.nextID()
+=======
+	id := NewID()
+>>>>>>> upstream/v2
 	c.registerListener(id)
 	unregister := &Unregister{
 		Request:      id,
@@ -461,7 +524,7 @@ func (c *Client) Unregister(procedure string) error {
 // Publish publishes an EVENT to all subscribed peers.
 func (c *Client) Publish(topic string, args []interface{}, kwargs map[string]interface{}) error {
 	return c.Send(&Publish{
-		Request:     c.nextID(),
+		Request:     NewID(),
 		Options:     make(map[string]interface{}),
 		Topic:       URI(topic),
 		Arguments:   args,
@@ -470,8 +533,8 @@ func (c *Client) Publish(topic string, args []interface{}, kwargs map[string]int
 }
 
 // Call calls a procedure given a URI.
-func (c *Client) Call(procedure string, args []interface{}, kwargs map[string]interface{}) (Message, error) {
-	id := c.nextID()
+func (c *Client) Call(procedure string, args []interface{}, kwargs map[string]interface{}) (*Result, error) {
+	id := NewID()
 	c.registerListener(id)
 
 	call := &Call{
@@ -490,10 +553,10 @@ func (c *Client) Call(procedure string, args []interface{}, kwargs map[string]in
 	if err != nil {
 		return nil, err
 	} else if e, ok := msg.(*Error); ok {
-		return nil, fmt.Errorf("error registering to procedure '%v': %v", procedure, e.Error)
-	} else if _, ok := msg.(*Result); !ok {
+		return nil, fmt.Errorf("error calling procedure '%v': %v", procedure, e.Error)
+	} else if result, ok := msg.(*Result); !ok {
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, RESULT))
 	} else {
-		return msg, nil
+		return result, nil
 	}
 }
