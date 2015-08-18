@@ -36,11 +36,11 @@ func NewWebsocketPeer(serialization Serialization, url, origin string) (Peer, er
 func NewSecureWebsocketPeer(serialization Serialization, url string, tlsClientConfig *tls.Config, header *http.Header) (Peer, error) {
 	switch serialization {
 	case JSON:
-		return newWebsocketPeer(url, jsonWebsocketProtocol, tlsClientConfig, header,
+		return newSecureWebsocketPeer(url, jsonWebsocketProtocol, tlsClientConfig, header,
 			new(JSONSerializer), websocket.TextMessage,
 		)
 	case MSGPACK:
-		return newWebsocketPeer(url, msgpackWebsocketProtocol, tlsClientConfig, header,
+		return newSecureWebsocketPeer(url, msgpackWebsocketProtocol, tlsClientConfig, header,
 			new(MessagePackSerializer), websocket.BinaryMessage,
 		)
 	default:
