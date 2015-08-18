@@ -1,7 +1,9 @@
 package turnpike
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"time"
 )
 
@@ -64,6 +66,15 @@ type eventDesc struct {
 // Creates a new websocket client.
 func NewWebsocketClient(serialization Serialization, url string) (*Client, error) {
 	p, err := NewWebsocketPeer(serialization, url, "")
+	if err != nil {
+		return nil, err
+	}
+	return NewClient(p), nil
+}
+
+// Creates a new websocket client secured and authenticated with the provided client TLS config and header.
+func NewSecureWebsocketClient(serialization Serialization, url string, tlsClientConfig *tls.Config, header http.Header) {
+	p, err := NewSecureWebsocketPeer(serialization, url, tlsClientConfig, header)
 	if err != nil {
 		return nil, err
 	}
