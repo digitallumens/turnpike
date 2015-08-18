@@ -73,7 +73,7 @@ func NewWebsocketClient(serialization Serialization, url string) (*Client, error
 }
 
 // Creates a new websocket client secured and authenticated with the provided client TLS config and header.
-func NewSecureWebsocketClient(serialization Serialization, url string, tlsClientConfig *tls.Config, header *http.Header) (*Client, error) {
+func NewSecureWebsocketClient(serialization Serialization, url string, tlsClientConfig *tls.Config, header http.Header) (*Client, error) {
 	p, err := NewSecureWebsocketPeer(serialization, url, tlsClientConfig, header)
 	if err != nil {
 		return nil, err

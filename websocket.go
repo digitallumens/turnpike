@@ -33,7 +33,7 @@ func NewWebsocketPeer(serialization Serialization, url, origin string) (Peer, er
 }
 
 // NewSecureWebsocketPeer connects to the websocket server at the specified url with the specified TLS config and header.
-func NewSecureWebsocketPeer(serialization Serialization, url string, tlsClientConfig *tls.Config, header *http.Header) (Peer, error) {
+func NewSecureWebsocketPeer(serialization Serialization, url string, tlsClientConfig *tls.Config, header http.Header) (Peer, error) {
 	switch serialization {
 	case JSON:
 		return newSecureWebsocketPeer(url, jsonWebsocketProtocol, tlsClientConfig, header,
@@ -83,7 +83,7 @@ func newWebsocketPeer(url, protocol, origin string, serializer Serializer, paylo
 	return ep, nil
 }
 
-func newSecureWebsocketPeer(url, protocol string, tlsClientConfig *tls.Config, header *http.Header, serializer Serializer, payloadType int) (Peer, error) {
+func newSecureWebsocketPeer(url, protocol string, tlsClientConfig *tls.Config, header http.Header, serializer Serializer, payloadType int) (Peer, error) {
 	dialer := websocket.Dialer{
 		Subprotocols:    []string{protocol},
 		TLSClientConfig: tlsClientConfig,
