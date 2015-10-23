@@ -7,21 +7,6 @@ import (
 	"time"
 )
 
-type Role int
-
-const (
-	// This client can publish events
-	PUBLISHER Role = 1 << iota
-	// This client can subscribe to events
-	SUBSCRIBER
-	// This client can register RPC functions
-	CALLEE
-	// This client can call RPC functions
-	CALLER
-	// This client can do all of the above
-	ALLROLES = PUBLISHER | SUBSCRIBER | CALLEE | CALLER
-)
-
 var (
 	abortUnexpectedMsg = &Abort{
 		Details: map[string]interface{}{},
@@ -37,7 +22,7 @@ var (
 	}
 	goodbyeClient = &Goodbye{
 		Details: map[string]interface{}{},
-		Reason:  WAMP_ERROR_CLOSE_REALM,
+		Reason:  ErrCloseRealm,
 	}
 )
 
@@ -46,7 +31,10 @@ type Client struct {
 	Peer
 	// ReceiveTimeout is the amount of time that the client will block waiting for a response from the router.
 	ReceiveTimeout time.Duration
-	// roles          int
+	// Auth is a map of WAMP authmethods to functions that will handle each auth type
+	Auth map[string]AuthFunc
+	// ReceiveDone is notified when the client's connection to the router is lost.
+	ReceiveDone  chan bool
 	listeners    map[ID]chan Message
 	events       map[ID]*eventDesc
 	procedures   map[ID]*procedureDesc
@@ -63,7 +51,8 @@ type eventDesc struct {
 	handler EventHandler
 }
 
-// Creates a new websocket client.
+// NewWebsocketClient creates a new websocket client connected to the specified
+// `url` and using the specified `serialization`.
 func NewWebsocketClient(serialization Serialization, url string) (*Client, error) {
 	p, err := NewWebsocketPeer(serialization, url, "")
 	if err != nil {
@@ -86,22 +75,23 @@ func NewClient(p Peer) *Client {
 	c := &Client{
 		Peer:           p,
 		ReceiveTimeout: 30 * time.Second,
-
-		// roles:          roles,
-		listeners:    make(map[ID]chan Message),
-		events:       make(map[ID]*eventDesc),
-		procedures:   make(map[ID]*procedureDesc),
-		requestCount: 0,
+		listeners:      make(map[ID]chan Message),
+		events:         make(map[ID]*eventDesc),
+		procedures:     make(map[ID]*procedureDesc),
+		requestCount:   0,
 	}
 	return c
 }
 
 // JoinRealm joins a WAMP realm, but does not handle challenge/response authentication.
-func (c *Client) JoinRealm(realm string, roles Role, details map[string]interface{}) (map[string]interface{}, error) {
+func (c *Client) JoinRealm(realm string, details map[string]interface{}) (map[string]interface{}, error) {
 	if details == nil {
 		details = map[string]interface{}{}
 	}
-	details["roles"] = createRolesMap(roles)
+	details["roles"] = clientRoles()
+	if c.Auth != nil && len(c.Auth) > 0 {
+		return c.joinRealmCRA(realm, details)
+	}
 	if err := c.Send(&Hello{Realm: URI(realm), Details: details}); err != nil {
 		c.Peer.Close()
 		return nil, err
@@ -123,15 +113,13 @@ func (c *Client) JoinRealm(realm string, roles Role, details map[string]interfac
 // signature string and a details map
 type AuthFunc func(map[string]interface{}, map[string]interface{}) (string, map[string]interface{}, error)
 
-// JoinRealmCRA joins a WAMP realm and handles challenge/response authentication.
-func (c *Client) JoinRealmCRA(realm string, roles Role, details map[string]interface{}, auth map[string]AuthFunc) (map[string]interface{}, error) {
-	if auth == nil || len(auth) == 0 {
-		return nil, fmt.Errorf("no authentication methods provided")
+// joinRealmCRA joins a WAMP realm and handles challenge/response authentication.
+func (c *Client) joinRealmCRA(realm string, details map[string]interface{}) (map[string]interface{}, error) {
+	authmethods := []interface{}{}
+	for m := range c.Auth {
+		authmethods = append(authmethods, m)
 	}
-	if details == nil || len(details) == 0 {
-		return nil, fmt.Errorf("no details map provided")
-	}
-	details["roles"] = createRolesMap(roles)
+	details["authmethods"] = authmethods
 	if err := c.Send(&Hello{Realm: URI(realm), Details: details}); err != nil {
 		c.Peer.Close()
 		return nil, err
@@ -143,7 +131,7 @@ func (c *Client) JoinRealmCRA(realm string, roles Role, details map[string]inter
 		c.Send(abortUnexpectedMsg)
 		c.Peer.Close()
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, CHALLENGE))
-	} else if authFunc, ok := auth[challenge.AuthMethod]; !ok {
+	} else if authFunc, ok := c.Auth[challenge.AuthMethod]; !ok {
 		c.Send(abortNoAuthHandler)
 		c.Peer.Close()
 		return nil, fmt.Errorf("no auth handler for method: %s", challenge.AuthMethod)
@@ -168,21 +156,13 @@ func (c *Client) JoinRealmCRA(realm string, roles Role, details map[string]inter
 	}
 }
 
-func createRolesMap(roles Role) map[string]interface{} {
-	rolesMap := make(map[string]interface{})
-	if roles&PUBLISHER == PUBLISHER {
-		rolesMap["publisher"] = make(map[string]interface{})
+func clientRoles() map[string]map[string]interface{} {
+	return map[string]map[string]interface{}{
+		"publisher":  make(map[string]interface{}),
+		"subscriber": make(map[string]interface{}),
+		"callee":     make(map[string]interface{}),
+		"caller":     make(map[string]interface{}),
 	}
-	if roles&SUBSCRIBER == SUBSCRIBER {
-		rolesMap["subscriber"] = make(map[string]interface{})
-	}
-	if roles&CALLEE == CALLEE {
-		rolesMap["callee"] = make(map[string]interface{})
-	}
-	if roles&CALLER == CALLER {
-		rolesMap["caller"] = make(map[string]interface{})
-	}
-	return rolesMap
 }
 
 func formatUnexpectedMessage(msg Message, expected MessageType) string {
@@ -253,19 +233,14 @@ func (c *Client) Receive() {
 
 		case *Registered:
 			c.notifyListener(msg, msg.Request)
-
 		case *Subscribed:
 			c.notifyListener(msg, msg.Request)
-
 		case *Unsubscribed:
 			c.notifyListener(msg, msg.Request)
-
 		case *Unregistered:
 			c.notifyListener(msg, msg.Request)
-
 		case *Result:
 			c.notifyListener(msg, msg.Request)
-
 		case *Error:
 			c.notifyListener(msg, msg.Request)
 
@@ -278,21 +253,25 @@ func (c *Client) Receive() {
 		}
 	}
 	log.Info("client closed")
+
+	if c.ReceiveDone != nil {
+		c.ReceiveDone <- true
+	}
 }
 
-func (c *Client) notifyListener(msg Message, requestId ID) {
+func (c *Client) notifyListener(msg Message, requestID ID) {
 	// pass in the request ID so we don't have to do any type assertion
-	if l, ok := c.listeners[requestId]; ok {
+	if l, ok := c.listeners[requestID]; ok {
 		l <- msg
 	} else {
-		log.Error("no listener for message", msg.MessageType(), requestId)
+		log.Error("no listener for message", msg.MessageType(), requestID)
 	}
 }
 
 func (c *Client) handleInvocation(msg *Invocation) {
 	if proc, ok := c.procedures[msg.Registration]; ok {
 		go func() {
-			result := proc.handler(msg.Arguments, msg.ArgumentsKw)
+			result := proc.handler(msg.Arguments, msg.ArgumentsKw, msg.Details)
 
 			var tosend Message
 			tosend = &Yield{
@@ -338,16 +317,16 @@ func (c *Client) registerListener(id ID) {
 
 func (c *Client) waitOnListener(id ID) (msg Message, err error) {
 	log.Info("wait on listener: %v", id)
-	if wait, ok := c.listeners[id]; !ok {
+	wait, ok := c.listeners[id]
+	if !ok {
 		return nil, fmt.Errorf("unknown listener ID: %v", id)
-	} else {
-		select {
-		case msg = <-wait:
-			return
-		case <-time.After(c.ReceiveTimeout):
-			err = fmt.Errorf("timeout while waiting for message")
-			return
-		}
+	}
+	select {
+	case msg = <-wait:
+		return
+	case <-time.After(c.ReceiveTimeout):
+		err = fmt.Errorf("timeout while waiting for message")
+		return
 	}
 }
 
@@ -420,15 +399,17 @@ func (c *Client) Unsubscribe(topic string) error {
 }
 
 // MethodHandler is an RPC endpoint.
-type MethodHandler func(args []interface{}, kwargs map[string]interface{}) (result *CallResult)
+type MethodHandler func(
+	args []interface{}, kwargs map[string]interface{}, details map[string]interface{},
+) (result *CallResult)
 
-// Register registers a procedure with the router.
-func (c *Client) Register(procedure string, fn MethodHandler) error {
+// Register registers a MethodHandler procedure with the router.
+func (c *Client) Register(procedure string, fn MethodHandler, options map[string]interface{}) error {
 	id := NewID()
 	c.registerListener(id)
 	register := &Register{
 		Request:   id,
-		Options:   make(map[string]interface{}),
+		Options:   options,
 		Procedure: URI(procedure),
 	}
 	if err := c.Send(register); err != nil {
@@ -448,6 +429,18 @@ func (c *Client) Register(procedure string, fn MethodHandler) error {
 		c.procedures[registered.Registration] = &procedureDesc{procedure, fn}
 	}
 	return nil
+}
+
+// BasicMethodHandler is an RPC endpoint that doesn't expect the `Details` map
+type BasicMethodHandler func(args []interface{}, kwargs map[string]interface{}) (result *CallResult)
+
+// BasicRegister registers a BasicMethodHandler procedure with the router
+func (c *Client) BasicRegister(procedure string, fn BasicMethodHandler) error {
+	wrap := func(args []interface{}, kwargs map[string]interface{},
+		details map[string]interface{}) (result *CallResult) {
+		return fn(args, kwargs)
+	}
+	return c.Register(procedure, wrap, make(map[string]interface{}))
 }
 
 // Unregister removes a procedure with the router

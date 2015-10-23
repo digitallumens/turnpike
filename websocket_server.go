@@ -32,7 +32,7 @@ type protocol struct {
 // WebsocketServer handles websocket connections.
 type WebsocketServer struct {
 	Router
-	upgrader *websocket.Upgrader
+	Upgrader *websocket.Upgrader
 
 	protocols map[string]protocol
 
@@ -42,7 +42,7 @@ type WebsocketServer struct {
 	BinarySerializer Serializer
 }
 
-// Creates a new WebsocketServer from a map of realms
+// NewWebsocketServer creates a new WebsocketServer from a map of realms
 func NewWebsocketServer(realms map[string]Realm) (*WebsocketServer, error) {
 	log.Info("NewWebsocketServer")
 	r := NewDefaultRouter()
@@ -55,7 +55,7 @@ func NewWebsocketServer(realms map[string]Realm) (*WebsocketServer, error) {
 	return s, nil
 }
 
-// Creates a new WebsocketServer with a single basic realm
+// NewBasicWebsocketServer creates a new WebsocketServer with a single basic realm
 func NewBasicWebsocketServer(uri string) *WebsocketServer {
 	log.Info("NewBasicWebsocketServer")
 	s, _ := NewWebsocketServer(map[string]Realm{uri: {}})
@@ -67,7 +67,7 @@ func newWebsocketServer(r Router) *WebsocketServer {
 		Router:    r,
 		protocols: make(map[string]protocol),
 	}
-	s.upgrader = &websocket.Upgrader{}
+	s.Upgrader = &websocket.Upgrader{}
 	s.RegisterProtocol(jsonWebsocketProtocol, websocket.TextMessage, new(JSONSerializer))
 	s.RegisterProtocol(msgpackWebsocketProtocol, websocket.BinaryMessage, new(MessagePackSerializer))
 	return s
@@ -83,26 +83,26 @@ func (s *WebsocketServer) RegisterProtocol(proto string, payloadType int, serial
 		return protocolExists(proto)
 	}
 	s.protocols[proto] = protocol{payloadType, serializer}
-	s.upgrader.Subprotocols = append(s.upgrader.Subprotocols, proto)
+	s.Upgrader.Subprotocols = append(s.Upgrader.Subprotocols, proto)
 	return nil
 }
 
 // GetLocalClient returns a client connected to the specified realm
-func (s *WebsocketServer) GetLocalClient(realm string) (*Client, error) {
-	if peer, err := s.Router.GetLocalPeer(URI(realm)); err != nil {
+func (s *WebsocketServer) GetLocalClient(realm string, details map[string]interface{}) (*Client, error) {
+	peer, err := s.Router.GetLocalPeer(URI(realm), details)
+	if err != nil {
 		return nil, err
-	} else {
-		c := NewClient(peer)
-		go c.Receive()
-		return c, nil
 	}
+	c := NewClient(peer)
+	go c.Receive()
+	return c, nil
 }
 
 // ServeHTTP handles a new HTTP connection.
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Info("WebsocketServer.ServeHTTP", r.Method, r.RequestURI)
 	// TODO: subprotocol?
-	conn, err := s.upgrader.Upgrade(w, r, nil)
+	conn, err := s.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Error("Error upgrading to websocket connection:", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -141,24 +141,7 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 		disconnected: make(chan bool),
 		payloadType:  payloadType,
 	}
-	go func() {
-		for {
-			// TODO: use conn.NextMessage() and stream
-			// TODO: do something different based on binary/text frames
-			if _, b, err := conn.ReadMessage(); err != nil {
-				log.Info("Client at remote address %s disconnected\n", conn.RemoteAddr().String())
-				peer.disconnected <- true
-				conn.Close()
-				break
-			} else {
-				msg, err := serializer.Deserialize(b)
-				if err != nil {
-					// TODO: handle error
-				} else {
-					peer.messages <- msg
-				}
-			}
-		}
-	}()
-	s.Router.Accept(&peer)
+	go peer.run()
+
+	logErr(s.Router.Accept(&peer))
 }

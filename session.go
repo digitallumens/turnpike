@@ -1,10 +1,20 @@
 package turnpike
 
+import (
+	"fmt"
+)
+
+// Session represents an active WAMP session
 type Session struct {
 	Peer
-	Id ID
+	Id      ID
+	Details map[string]interface{}
 
 	kill chan URI
+}
+
+func (s Session) String() string {
+	return fmt.Sprintf("%d", s.Id)
 }
 
 // localPipe creates two linked sessions. Messages sent to one will

@@ -1,6 +1,7 @@
 package turnpike
 
-// A broker handles routing EVENTS from Publishers to Subscribers.
+// Broker is the interface implemented by an object that handles routing EVENTS
+// from Publishers to Subscribers.
 type Broker interface {
 	// Publishes a message to all Subscribers.
 	Publish(Sender, *Publish)
@@ -16,7 +17,8 @@ type defaultBroker struct {
 	subscriptions map[ID]URI
 }
 
-// NewDefaultBroker initializes and returns a simple broker that matches URIs to Subscribers.
+// NewDefaultBroker initializes and returns a simple broker that matches URIs to
+// Subscribers.
 func NewDefaultBroker() Broker {
 	return &defaultBroker{
 		routes:        make(map[URI]map[ID]Sender),
@@ -29,9 +31,9 @@ func NewDefaultBroker() Broker {
 // If msg.Options["acknowledge"] == true, the publisher receives a Published event
 // after the message has been sent to all subscribers.
 func (br *defaultBroker) Publish(pub Sender, msg *Publish) {
-	pubId := NewID()
+	pubID := NewID()
 	evtTemplate := Event{
-		Publication: pubId,
+		Publication: pubID,
 		Arguments:   msg.Arguments,
 		ArgumentsKw: msg.ArgumentsKw,
 		Details:     make(map[string]interface{}),
@@ -48,7 +50,7 @@ func (br *defaultBroker) Publish(pub Sender, msg *Publish) {
 
 	// only send published message if acknowledge is present and set to true
 	if doPub, _ := msg.Options["acknowledge"].(bool); doPub {
-		pub.Send(&Published{Request: msg.Request, Publication: pubId})
+		pub.Send(&Published{Request: msg.Request, Publication: pubID})
 	}
 }
 
@@ -71,32 +73,23 @@ func (br *defaultBroker) Unsubscribe(sub Sender, msg *Unsubscribe) {
 		err := &Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
-			Error:   WAMP_ERROR_NO_SUCH_SUBSCRIPTION,
+			Error:   ErrNoSuchSubscription,
 		}
 		sub.Send(err)
+		log.Info("Error unsubscribing: no such subscription %v", msg.Subscription)
 		return
 	}
 	delete(br.subscriptions, msg.Subscription)
 
 	if r, ok := br.routes[topic]; !ok {
-		err := &Error{
-			Type:    msg.MessageType(),
-			Request: msg.Request,
-			Error:   URI("wamp.error.internal_error"),
-		}
-		sub.Send(err)
+		log.Info("Error unsubscribing: unable to find routes for %s topic", topic)
 	} else if _, ok := r[msg.Subscription]; !ok {
-		err := &Error{
-			Type:    msg.MessageType(),
-			Request: msg.Request,
-			Error:   URI("wamp.error.internal_error"),
-		}
-		sub.Send(err)
+		log.Info("Error unsubscribing: %s route does not exist for %v subscription", topic, msg.Subscription)
 	} else {
 		delete(r, msg.Subscription)
 		if len(r) == 0 {
 			delete(br.routes, topic)
 		}
-		sub.Send(&Unsubscribed{Request: msg.Request})
 	}
+	sub.Send(&Unsubscribed{Request: msg.Request})
 }

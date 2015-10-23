@@ -29,6 +29,14 @@ const format = "%{color}[%{time} %{level}]%{color:reset}[%{module}-%{shortfile}]
 //
 // func logErr(v ...interface{}) error {
 // 	err := errors.New(fmt.Sprintln(v...))
-// 	log.Println(err)
+// 	log.Info(err)
 // 	return err
 // }
+
+func logErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	log.Error("%s", err)
+	return err
+}

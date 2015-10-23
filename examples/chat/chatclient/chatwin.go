@@ -226,7 +226,7 @@ func (cw *chatWin) dialog(messages chan message) {
 		default:
 			line := cw.handleInput(messageWin)
 			if line != "" {
-				log.Println("Entered message:", line)
+				log.Info("Entered message:", line)
 				msg := message{From: cw.username, Message: line}
 				// TODO: uncomment once turnpike is fixed to not send events to the sender
 				// y, _ := chats.CursorYX()

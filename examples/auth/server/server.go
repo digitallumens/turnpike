@@ -27,9 +27,9 @@ func (e *exampleAuth) Authenticate(c map[string]interface{}, signature string) (
 	mac := hmac.New(sha256.New, []byte(e.password))
 	mac.Write([]byte(challenge))
 	expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
-	log.Println("challenge:", challenge)
-	log.Println("expected:", expected)
-	log.Println("given:", signature)
+	log.Info("challenge:", challenge)
+	log.Info("expected:", expected)
+	log.Info("given:", signature)
 	if !hmac.Equal([]byte(signature), []byte(expected)) {
 		return nil, fmt.Errorf("Invalid password")
 	}
@@ -49,9 +49,9 @@ func main() {
 		panic("error creating websocket server: " + err.Error())
 	}
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Connection from", r.RemoteAddr)
+		log.Info("Connection from", r.RemoteAddr)
 		s.ServeHTTP(w, r)
 	})
-	log.Println("turnpike server starting on port 8000")
+	log.Info("turnpike server starting on port 8000")
 	log.Fatal(http.ListenAndServe(":8000", nil))
 }

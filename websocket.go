@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -14,6 +15,7 @@ type websocketPeer struct {
 	messages     chan Message
 	disconnected chan bool
 	payloadType  int
+	closed       bool
 }
 
 // NewWebsocketPeer connects to the websocket server at the specified url.
@@ -28,7 +30,7 @@ func NewWebsocketPeer(serialization Serialization, url, origin string) (Peer, er
 			new(MessagePackSerializer), websocket.BinaryMessage,
 		)
 	default:
-		return nil, fmt.Errorf("Unsupported serialization: %s", serialization)
+		return nil, fmt.Errorf("Unsupported serialization: %v", serialization)
 	}
 }
 
@@ -99,26 +101,12 @@ func newSecureWebsocketPeer(url, protocol string, tlsClientConfig *tls.Config, h
 		serializer:   serializer,
 		payloadType:  payloadType,
 	}
-	go func() {
-		for {
-			// TODO: use conn.NextMessage() and stream
-			// TODO: do something different based on binary/text frames
-			if _, b, err := conn.ReadMessage(); err != nil {
-				conn.Close()
-				break
-			} else {
-				msg, err := serializer.Deserialize(b)
-				if err != nil {
-					// TODO: handle error
-				} else {
-					ep.messages <- msg
-				}
-			}
-		}
-	}()
+	go ep.run()
+
 	return ep, nil
 }
 
+// TODO: make this just add the message to a channel so we don't block
 func (ep *websocketPeer) Send(msg Message) error {
 	b, err := ep.serializer.Serialize(msg)
 	if err != nil {
@@ -134,5 +122,40 @@ func (ep *websocketPeer) Disconnected() <-chan bool {
 	return ep.disconnected
 }
 func (ep *websocketPeer) Close() error {
+	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "goodbye")
+	err := ep.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(5*time.Second))
+	if err != nil {
+		log.Info("error sending close message:", err)
+	}
+	ep.closed = true
 	return ep.conn.Close()
+}
+
+func (ep *websocketPeer) run() {
+	for {
+		// TODO: use conn.NextMessage() and stream
+		// TODO: do something different based on binary/text frames
+		if msgType, b, err := ep.conn.ReadMessage(); err != nil {
+			if ep.closed {
+				log.Info("peer connection closed")
+			} else {
+				log.Info("error reading from peer:", err)
+				ep.conn.Close()
+			}
+			close(ep.messages)
+			break
+		} else if msgType == websocket.CloseMessage {
+			ep.conn.Close()
+			close(ep.messages)
+			break
+		} else {
+			msg, err := ep.serializer.Deserialize(b)
+			if err != nil {
+				log.Info("error deserializing peer message:", err)
+				// TODO: handle error
+			} else {
+				ep.messages <- msg
+			}
+		}
+	}
 }

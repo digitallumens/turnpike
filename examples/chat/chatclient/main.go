@@ -40,7 +40,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	_, err = c.JoinRealm("turnpike.examples", turnpike.ALLROLES, nil)
+	_, err = c.JoinRealm("turnpike.examples", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -49,11 +49,11 @@ func main() {
 	if err := c.Subscribe("chat", func(args []interface{}, kwargs map[string]interface{}) {
 		if len(args) == 2 {
 			if from, ok := args[0].(string); !ok {
-				log.Println("First argument not a string:", args[0])
+				log.Info("First argument not a string:", args[0])
 			} else if msg, ok := args[1].(string); !ok {
-				log.Println("Second argument not a string:", args[1])
+				log.Info("Second argument not a string:", args[1])
 			} else {
-				log.Printf("%s: %s", from, msg)
+				log.Info("%s: %s", from, msg)
 				messages <- message{From: from, Message: msg}
 			}
 		}
@@ -70,7 +70,7 @@ func main() {
 func sendMessages(c *turnpike.Client, messages chan message) {
 	for msg := range messages {
 		if err := c.Publish("chat", []interface{}{msg.From, msg.Message}, nil); err != nil {
-			log.Println("Error sending message:", err)
+			log.Info("Error sending message:", err)
 		}
 	}
 }
