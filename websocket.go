@@ -149,6 +149,7 @@ func (ep *websocketPeer) run() {
 			close(ep.messages)
 			break
 		} else {
+			log.Info("websocketPeer read msg: %s", string(b))
 			msg, err := ep.serializer.Deserialize(b)
 			if err != nil {
 				log.Info("error deserializing peer message:", err)
