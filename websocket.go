@@ -65,23 +65,8 @@ func newWebsocketPeer(url, protocol, origin string, serializer Serializer, paylo
 		serializer:   serializer,
 		payloadType:  payloadType,
 	}
-	go func() {
-		for {
-			// TODO: use conn.NextMessage() and stream
-			// TODO: do something different based on binary/text frames
-			if _, b, err := conn.ReadMessage(); err != nil {
-				conn.Close()
-				break
-			} else {
-				msg, err := serializer.Deserialize(b)
-				if err != nil {
-					// TODO: handle error
-				} else {
-					ep.messages <- msg
-				}
-			}
-		}
-	}()
+	go ep.run()
+
 	return ep, nil
 }
 
