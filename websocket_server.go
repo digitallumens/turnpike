@@ -135,11 +135,10 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 	}
 
 	peer := websocketPeer{
-		conn:         conn,
-		serializer:   serializer,
-		messages:     make(chan Message, 10),
-		disconnected: make(chan bool),
-		payloadType:  payloadType,
+		conn:        conn,
+		serializer:  serializer,
+		messages:    make(chan Message, 10),
+		payloadType: payloadType,
 	}
 	go peer.run()
 

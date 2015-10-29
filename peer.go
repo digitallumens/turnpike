@@ -24,9 +24,6 @@ type Peer interface {
 
 	// Receive returns a channel of messages coming from the peer.
 	Receive() <-chan Message
-
-	// Disconnected returns a channel telling us when the underlying websocket has disconnected
-	Disconnected() <-chan bool
 }
 
 // GetMessageTimeout is a convenience function to get a single message from a

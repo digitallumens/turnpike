@@ -10,12 +10,11 @@ import (
 )
 
 type websocketPeer struct {
-	conn         *websocket.Conn
-	serializer   Serializer
-	messages     chan Message
-	disconnected chan bool
-	payloadType  int
-	closed       bool
+	conn        *websocket.Conn
+	serializer  Serializer
+	messages    chan Message
+	payloadType int
+	closed      bool
 }
 
 // NewWebsocketPeer connects to the websocket server at the specified url.
@@ -59,11 +58,10 @@ func newWebsocketPeer(url, protocol, origin string, serializer Serializer, paylo
 		return nil, err
 	}
 	ep := &websocketPeer{
-		conn:         conn,
-		messages:     make(chan Message, 10),
-		disconnected: make(chan bool),
-		serializer:   serializer,
-		payloadType:  payloadType,
+		conn:        conn,
+		messages:    make(chan Message, 10),
+		serializer:  serializer,
+		payloadType: payloadType,
 	}
 	go ep.run()
 
@@ -80,11 +78,10 @@ func newSecureWebsocketPeer(url, protocol string, tlsClientConfig *tls.Config, h
 		return nil, err
 	}
 	ep := &websocketPeer{
-		conn:         conn,
-		messages:     make(chan Message, 10),
-		disconnected: make(chan bool),
-		serializer:   serializer,
-		payloadType:  payloadType,
+		conn:        conn,
+		messages:    make(chan Message, 10),
+		serializer:  serializer,
+		payloadType: payloadType,
 	}
 	go ep.run()
 
@@ -102,9 +99,6 @@ func (ep *websocketPeer) Send(msg Message) error {
 }
 func (ep *websocketPeer) Receive() <-chan Message {
 	return ep.messages
-}
-func (ep *websocketPeer) Disconnected() <-chan bool {
-	return ep.disconnected
 }
 func (ep *websocketPeer) Close() error {
 	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "goodbye")
