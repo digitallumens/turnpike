@@ -141,12 +141,15 @@ func (d *defaultDealer) Yield(callee Sender, msg *Yield) {
 		} else {
 			delete(d.calls, callID)
 			// return the result to the caller
-			caller.Send(&Result{
+			err := caller.Send(&Result{
 				Request:     callID,
 				Details:     map[string]interface{}{},
 				Arguments:   msg.Arguments,
 				ArgumentsKw: msg.ArgumentsKw,
 			})
+			if err != nil {
+				log.Error("caller.Send returned an error: %s", err.Error())
+			}
 			log.Info("returned YIELD %v to caller as RESULT %v", msg.Request, callID)
 		}
 	}
