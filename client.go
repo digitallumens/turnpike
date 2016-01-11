@@ -485,6 +485,9 @@ func (c *Client) Unregister(procedure string) error {
 
 // Publish publishes an EVENT to all subscribed peers.
 func (c *Client) Publish(topic string, args []interface{}, kwargs map[string]interface{}) error {
+	if c == nil {
+		return nil
+	}
 	return c.Send(&Publish{
 		Request:     NewID(),
 		Options:     make(map[string]interface{}),
