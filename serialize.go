@@ -205,7 +205,7 @@ func (s *JSONSerializer) Deserialize(data []byte) (Message, error) {
 		return nil, fmt.Errorf("Unsupported message format")
 	}
 
-	log.Info("Deserialized msgType %d, arr %+v", msgType, arr)
+	log.Debug("Deserialized msgType %d, arr %+v", msgType, arr)
 
 	return apply(msgType, arr)
 }

@@ -94,7 +94,7 @@ func (ep *websocketPeer) Send(msg Message) error {
 	if err != nil {
 		return err
 	}
-	log.Info("%s %+v", msg.MessageType().String(), msg)
+	log.Debug("%s %+v", msg.MessageType().String(), msg)
 	return ep.conn.WriteMessage(ep.payloadType, b)
 }
 func (ep *websocketPeer) Receive() <-chan Message {
@@ -104,7 +104,7 @@ func (ep *websocketPeer) Close() error {
 	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "goodbye")
 	err := ep.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(5*time.Second))
 	if err != nil {
-		log.Info("error sending close message:", err)
+		log.Error("error sending close message:", err)
 	}
 	ep.closed = true
 	return ep.conn.Close()
@@ -116,9 +116,9 @@ func (ep *websocketPeer) run() {
 		// TODO: do something different based on binary/text frames
 		if msgType, b, err := ep.conn.ReadMessage(); err != nil {
 			if ep.closed {
-				log.Info("peer connection closed")
+				log.Debug("peer connection closed")
 			} else {
-				log.Info("error reading from peer:", err)
+				log.Error("error reading from peer: %s", err.Error())
 				ep.conn.Close()
 			}
 			close(ep.messages)
@@ -128,10 +128,10 @@ func (ep *websocketPeer) run() {
 			close(ep.messages)
 			break
 		} else {
-			log.Info("websocketPeer read msg: %s", string(b))
+			log.Debug("websocketPeer read msg: %s", string(b))
 			msg, err := ep.serializer.Deserialize(b)
 			if err != nil {
-				log.Info("error deserializing peer message:", err)
+				log.Error("error deserializing peer message:", err)
 				// TODO: handle error
 			} else {
 				ep.messages <- msg
