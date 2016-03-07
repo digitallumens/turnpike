@@ -118,7 +118,7 @@ func (ep *websocketPeer) run() {
 			if ep.closed {
 				log.Debug("peer connection closed")
 			} else {
-				log.Warn("Error reading from peer: %s", err.Error())
+				log.Warning("Error reading from peer: %s", err.Error())
 				ep.conn.Close()
 			}
 			close(ep.messages)
