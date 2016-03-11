@@ -144,7 +144,7 @@ func (r *defaultRouter) Accept(client Peer) error {
 	if err := client.Send(welcome); err != nil {
 		return err
 	}
-	log.Info("Established session:", welcome.Id)
+	log.Info("Established session: %d", welcome.Id)
 
 	// session details
 	welcome.Details["session"] = welcome.Id

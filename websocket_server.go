@@ -100,7 +100,7 @@ func (s *WebsocketServer) GetLocalClient(realm string, details map[string]interf
 
 // ServeHTTP handles a new HTTP connection.
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Info("WebsocketServer.ServeHTTP", r.Method, r.RequestURI)
+	log.Info("WebsocketServer.ServeHTTP %s %s", r.Method, r.RequestURI)
 	// TODO: subprotocol?
 	conn, err := s.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
