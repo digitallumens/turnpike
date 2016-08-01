@@ -274,7 +274,7 @@ func (c *Client) Receive() {
 	}
 
 	close(c.acts)
-	log.Println("client closed")
+	log.Info("client closed")
 
 	if c.ReceiveDone != nil {
 		c.ReceiveDone <- true
@@ -287,7 +287,7 @@ func (c *Client) handleEvent(msg *Event) {
 		if event, ok := c.events[msg.Subscription]; ok {
 			go event.handler(msg.Arguments, msg.ArgumentsKw)
 		} else {
-			log.Println("no handler registered for subscription:", msg.Subscription)
+			log.Info("no handler registered for subscription:", msg.Subscription)
 		}
 		sync <- struct{}{}
 	}
@@ -340,18 +340,18 @@ func (c *Client) handleInvocation(msg *Invocation) {
 				}
 
 				if err := c.Send(tosend); err != nil {
-					log.Println("error sending message:", err)
+					log.Info("error sending message:", err)
 				}
 			}()
 		} else {
-			log.Println("no handler registered for registration:", msg.Registration)
+			log.Info("no handler registered for registration:", msg.Registration)
 			if err := c.Send(&Error{
 				Type:    INVOCATION,
 				Request: msg.Request,
 				Details: make(map[string]interface{}),
 				Error:   URI(fmt.Sprintf("no handler for registration: %v", msg.Registration)),
 			}); err != nil {
-				log.Println("error sending message:", err)
+				log.Info("error sending message:", err)
 			}
 		}
 		sync <- struct{}{}
@@ -371,7 +371,7 @@ func (c *Client) registerListener(id ID) {
 }
 
 func (c *Client) waitOnListener(id ID) (msg Message, err error) {
-	log.Println("wait on listener:", id)
+	log.Info("wait on listener:", id)
 	var (
 		sync = make(chan struct{})
 		wait chan Message
