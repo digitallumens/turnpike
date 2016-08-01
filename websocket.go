@@ -20,36 +20,36 @@ type websocketPeer struct {
 }
 
 // NewWebsocketPeer connects to the websocket server at the specified url.
-func NewWebsocketPeer(serialization Serialization, url, origin string, tlscfg *tls.Config) (Peer, error) {
+func NewWebsocketPeer(serialization Serialization, url, origin string, tlscfg *tls.Config, header http.Header) (Peer, error) {
 	switch serialization {
 	case JSON:
 		return newWebsocketPeer(url, jsonWebsocketProtocol, origin,
-			new(JSONSerializer), websocket.TextMessage, tlscfg,
+			new(JSONSerializer), websocket.TextMessage, tlscfg, header,
 		)
 	case MSGPACK:
 		return newWebsocketPeer(url, msgpackWebsocketProtocol, origin,
-			new(MessagePackSerializer), websocket.BinaryMessage, tlscfg,
+			new(MessagePackSerializer), websocket.BinaryMessage, tlscfg, header,
 		)
 	default:
 		return nil, fmt.Errorf("Unsupported serialization: %v", serialization)
 	}
 }
 
-// NewSecureWebsocketPeer connects to the websocket server at the specified url with the specified TLS config and header.
-func NewSecureWebsocketPeer(serialization Serialization, url string, tlsClientConfig *tls.Config, header http.Header) (Peer, error) {
-	switch serialization {
-	case JSON:
-		return newSecureWebsocketPeer(url, jsonWebsocketProtocol, tlsClientConfig, header,
-			new(JSONSerializer), websocket.TextMessage,
-		)
-	case MSGPACK:
-		return newSecureWebsocketPeer(url, msgpackWebsocketProtocol, tlsClientConfig, header,
-			new(MessagePackSerializer), websocket.BinaryMessage,
-		)
-	default:
-		return nil, fmt.Errorf("Unsupported serialization: %s", serialization)
-	}
-}
+// // NewSecureWebsocketPeer connects to the websocket server at the specified url with the specified TLS config and header.
+// func NewSecureWebsocketPeer(serialization Serialization, url string, tlsClientConfig *tls.Config, header http.Header) (Peer, error) {
+// 	switch serialization {
+// 	case JSON:
+// 		return newSecureWebsocketPeer(url, jsonWebsocketProtocol, tlsClientConfig, header,
+// 			new(JSONSerializer), websocket.TextMessage,
+// 		)
+// 	case MSGPACK:
+// 		return newSecureWebsocketPeer(url, msgpackWebsocketProtocol, tlsClientConfig, header,
+// 			new(MessagePackSerializer), websocket.BinaryMessage,
+// 		)
+// 	default:
+// 		return nil, fmt.Errorf("Unsupported serialization: %s", serialization)
+// 	}
+// }
 
 func newWebsocketPeer(url, protocol, origin string, serializer Serializer, payloadType int, tlscfg *tls.Config, header http.Header) (Peer, error) {
 	dialer := websocket.Dialer{
@@ -71,25 +71,25 @@ func newWebsocketPeer(url, protocol, origin string, serializer Serializer, paylo
 	return ep, nil
 }
 
-func newSecureWebsocketPeer(url, protocol string, tlsClientConfig *tls.Config, header http.Header, serializer Serializer, payloadType int) (Peer, error) {
-	dialer := websocket.Dialer{
-		Subprotocols:    []string{protocol},
-		TLSClientConfig: tlsClientConfig,
-	}
-	conn, _, err := dialer.Dial(url, header)
-	if err != nil {
-		return nil, err
-	}
-	ep := &websocketPeer{
-		conn:        conn,
-		messages:    make(chan Message, 10),
-		serializer:  serializer,
-		payloadType: payloadType,
-	}
-	go ep.run()
-
-	return ep, nil
-}
+// func newSecureWebsocketPeer(url, protocol string, tlsClientConfig *tls.Config, header http.Header, serializer Serializer, payloadType int) (Peer, error) {
+// 	dialer := websocket.Dialer{
+// 		Subprotocols:    []string{protocol},
+// 		TLSClientConfig: tlsClientConfig,
+// 	}
+// 	conn, _, err := dialer.Dial(url, header)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	ep := &websocketPeer{
+// 		conn:        conn,
+// 		messages:    make(chan Message, 10),
+// 		serializer:  serializer,
+// 		payloadType: payloadType,
+// 	}
+// 	go ep.run()
+//
+// 	return ep, nil
+// }
 
 // TODO: make this just add the message to a channel so we don't block
 func (ep *websocketPeer) Send(msg Message) error {
