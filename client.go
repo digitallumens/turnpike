@@ -54,22 +54,22 @@ type eventDesc struct {
 
 // NewWebsocketClient creates a new websocket client connected to the specified
 // `url` and using the specified `serialization`.
-func NewWebsocketClient(serialization Serialization, url string, tlscfg *tls.Config) (*Client, error) {
-	p, err := NewWebsocketPeer(serialization, url, "", tlscfg)
+func NewWebsocketClient(serialization Serialization, url string, tlscfg *tls.Config, header http.Header) (*Client, error) {
+	p, err := NewWebsocketPeer(serialization, url, "", tlscfg, header)
 	if err != nil {
 		return nil, err
 	}
 	return NewClient(p), nil
 }
 
-// Creates a new websocket client secured and authenticated with the provided client TLS config and header.
-func NewSecureWebsocketClient(serialization Serialization, url string, tlsClientConfig *tls.Config, header http.Header) (*Client, error) {
-	p, err := NewSecureWebsocketPeer(serialization, url, tlsClientConfig, header)
-	if err != nil {
-		return nil, err
-	}
-	return NewClient(p), nil
-}
+// // Creates a new websocket client secured and authenticated with the provided client TLS config and header.
+// func NewSecureWebsocketClient(serialization Serialization, url string, tlsClientConfig *tls.Config, header http.Header) (*Client, error) {
+// 	p, err := NewSecureWebsocketPeer(serialization, url, tlsClientConfig, header)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return NewClient(p), nil
+// }
 
 // NewClient takes a connected Peer and returns a new Client
 func NewClient(p Peer) *Client {
