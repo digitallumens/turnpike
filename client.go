@@ -38,6 +38,7 @@ type Client struct {
 	listeners    map[ID]chan Message
 	events       map[ID]*eventDesc
 	procedures   map[ID]*procedureDesc
+	acts         chan func()
 	requestCount uint
 }
 
@@ -53,8 +54,8 @@ type eventDesc struct {
 
 // NewWebsocketClient creates a new websocket client connected to the specified
 // `url` and using the specified `serialization`.
-func NewWebsocketClient(serialization Serialization, url string) (*Client, error) {
-	p, err := NewWebsocketPeer(serialization, url, "")
+func NewWebsocketClient(serialization Serialization, url string, tlscfg *tls.Config) (*Client, error) {
+	p, err := NewWebsocketPeer(serialization, url, "", tlscfg)
 	if err != nil {
 		return nil, err
 	}
@@ -78,9 +79,21 @@ func NewClient(p Peer) *Client {
 		listeners:      make(map[ID]chan Message),
 		events:         make(map[ID]*eventDesc),
 		procedures:     make(map[ID]*procedureDesc),
+		acts:           make(chan func()),
 		requestCount:   0,
 	}
+	go c.run()
 	return c
+}
+
+func (c *Client) run() {
+	for {
+		if act, ok := <-c.acts; ok {
+			act()
+		} else {
+			return
+		}
+	}
 }
 
 // JoinRealm joins a WAMP realm, but does not handle challenge/response authentication.
@@ -94,14 +107,17 @@ func (c *Client) JoinRealm(realm string, details map[string]interface{}) (map[st
 	}
 	if err := c.Send(&Hello{Realm: URI(realm), Details: details}); err != nil {
 		c.Peer.Close()
+		close(c.acts)
 		return nil, err
 	}
 	if msg, err := GetMessageTimeout(c.Peer, c.ReceiveTimeout); err != nil {
 		c.Peer.Close()
+		close(c.acts)
 		return nil, err
 	} else if welcome, ok := msg.(*Welcome); !ok {
 		c.Send(abortUnexpectedMsg)
 		c.Peer.Close()
+		close(c.acts)
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, WELCOME))
 	} else {
 		go c.Receive()
@@ -122,33 +138,41 @@ func (c *Client) joinRealmCRA(realm string, details map[string]interface{}) (map
 	details["authmethods"] = authmethods
 	if err := c.Send(&Hello{Realm: URI(realm), Details: details}); err != nil {
 		c.Peer.Close()
+		close(c.acts)
 		return nil, err
 	}
 	if msg, err := GetMessageTimeout(c.Peer, c.ReceiveTimeout); err != nil {
 		c.Peer.Close()
+		close(c.acts)
 		return nil, err
 	} else if challenge, ok := msg.(*Challenge); !ok {
 		c.Send(abortUnexpectedMsg)
 		c.Peer.Close()
+		close(c.acts)
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, CHALLENGE))
 	} else if authFunc, ok := c.Auth[challenge.AuthMethod]; !ok {
 		c.Send(abortNoAuthHandler)
 		c.Peer.Close()
+		close(c.acts)
 		return nil, fmt.Errorf("no auth handler for method: %s", challenge.AuthMethod)
 	} else if signature, authDetails, err := authFunc(details, challenge.Extra); err != nil {
 		c.Send(abortAuthFailure)
 		c.Peer.Close()
+		close(c.acts)
 		return nil, err
 	} else if err := c.Send(&Authenticate{Signature: signature, Extra: authDetails}); err != nil {
 		c.Peer.Close()
+		close(c.acts)
 		return nil, err
 	}
 	if msg, err := GetMessageTimeout(c.Peer, c.ReceiveTimeout); err != nil {
 		c.Peer.Close()
+		close(c.acts)
 		return nil, err
 	} else if welcome, ok := msg.(*Welcome); !ok {
 		c.Send(abortUnexpectedMsg)
 		c.Peer.Close()
+		close(c.acts)
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, WELCOME))
 	} else {
 		go c.Receive()
@@ -222,11 +246,7 @@ func (c *Client) Receive() {
 		switch msg := msg.(type) {
 
 		case *Event:
-			if event, ok := c.events[msg.Subscription]; ok {
-				go event.handler(msg.Arguments, msg.ArgumentsKw)
-			} else {
-				log.Error("no handler registered for subscription:", msg.Subscription)
-			}
+			c.handleEvent(msg)
 
 		case *Invocation:
 			c.handleInvocation(msg)
@@ -252,16 +272,41 @@ func (c *Client) Receive() {
 			log.Error("unhandled message:", msg.MessageType(), msg)
 		}
 	}
-	log.Info("client closed")
+
+	close(c.acts)
+	log.Println("client closed")
 
 	if c.ReceiveDone != nil {
 		c.ReceiveDone <- true
 	}
 }
 
+func (c *Client) handleEvent(msg *Event) {
+	sync := make(chan struct{})
+	c.acts <- func() {
+		if event, ok := c.events[msg.Subscription]; ok {
+			go event.handler(msg.Arguments, msg.ArgumentsKw)
+		} else {
+			log.Println("no handler registered for subscription:", msg.Subscription)
+		}
+		sync <- struct{}{}
+	}
+	<-sync
+}
+
 func (c *Client) notifyListener(msg Message, requestID ID) {
 	// pass in the request ID so we don't have to do any type assertion
-	if l, ok := c.listeners[requestID]; ok {
+	var (
+		sync = make(chan struct{})
+		l    chan Message
+		ok   bool
+	)
+	c.acts <- func() {
+		l, ok = c.listeners[requestID]
+		sync <- struct{}{}
+	}
+	<-sync
+	if ok {
 		l <- msg
 	} else {
 		log.Error("no listener for message", msg.MessageType(), requestID)
@@ -269,65 +314,86 @@ func (c *Client) notifyListener(msg Message, requestID ID) {
 }
 
 func (c *Client) handleInvocation(msg *Invocation) {
-	if proc, ok := c.procedures[msg.Registration]; ok {
-		go func() {
-			result := proc.handler(msg.Arguments, msg.ArgumentsKw, msg.Details)
+	sync := make(chan struct{})
+	c.acts <- func() {
+		if proc, ok := c.procedures[msg.Registration]; ok {
+			go func() {
+				result := proc.handler(msg.Arguments, msg.ArgumentsKw, msg.Details)
 
-			var tosend Message
-			tosend = &Yield{
-				Request:     msg.Request,
-				Options:     make(map[string]interface{}),
-				Arguments:   result.Args,
-				ArgumentsKw: result.Kwargs,
-			}
-
-			if result.Err != "" {
-				tosend = &Error{
-					Type:        INVOCATION,
+				var tosend Message
+				tosend = &Yield{
 					Request:     msg.Request,
-					Details:     make(map[string]interface{}),
+					Options:     make(map[string]interface{}),
 					Arguments:   result.Args,
 					ArgumentsKw: result.Kwargs,
-					Error:       result.Err,
 				}
-			}
 
-			if err := c.Send(tosend); err != nil {
-				log.Error("error sending message:", err)
+				if result.Err != "" {
+					tosend = &Error{
+						Type:        INVOCATION,
+						Request:     msg.Request,
+						Details:     make(map[string]interface{}),
+						Arguments:   result.Args,
+						ArgumentsKw: result.Kwargs,
+						Error:       result.Err,
+					}
+				}
+
+				if err := c.Send(tosend); err != nil {
+					log.Println("error sending message:", err)
+				}
+			}()
+		} else {
+			log.Println("no handler registered for registration:", msg.Registration)
+			if err := c.Send(&Error{
+				Type:    INVOCATION,
+				Request: msg.Request,
+				Details: make(map[string]interface{}),
+				Error:   URI(fmt.Sprintf("no handler for registration: %v", msg.Registration)),
+			}); err != nil {
+				log.Println("error sending message:", err)
 			}
-		}()
-	} else {
-		log.Error("no handler registered for registration:", msg.Registration)
-		if err := c.Send(&Error{
-			Type:    INVOCATION,
-			Request: msg.Request,
-			Details: make(map[string]interface{}),
-			Error:   URI(fmt.Sprintf("no handler for registration: %v", msg.Registration)),
-		}); err != nil {
-			log.Error("error sending message:", err)
 		}
+		sync <- struct{}{}
 	}
+	<-sync
 }
 
 func (c *Client) registerListener(id ID) {
 	log.Info("register listener: %v", id)
 	wait := make(chan Message, 1)
-	c.listeners[id] = wait
+	sync := make(chan struct{})
+	c.acts <- func() {
+		c.listeners[id] = wait
+		sync <- struct{}{}
+	}
+	<-sync
 }
 
 func (c *Client) waitOnListener(id ID) (msg Message, err error) {
-	log.Info("wait on listener: %v", id)
-	wait, ok := c.listeners[id]
+	log.Println("wait on listener:", id)
+	var (
+		sync = make(chan struct{})
+		wait chan Message
+		ok   bool
+	)
+	c.acts <- func() {
+		wait, ok = c.listeners[id]
+		sync <- struct{}{}
+	}
+	<-sync
 	if !ok {
 		return nil, fmt.Errorf("unknown listener ID: %v", id)
 	}
 	select {
 	case msg = <-wait:
-		return
 	case <-time.After(c.ReceiveTimeout):
 		err = fmt.Errorf("timeout while waiting for message")
-		return
 	}
+	c.acts <- func() {
+		delete(c.listeners, id)
+	}
+	return
 }
 
 // EventHandler handles a publish event.
@@ -342,12 +408,13 @@ func (c *Client) Subscribe(topic string, fn EventHandler) error {
 		Options: make(map[string]interface{}),
 		Topic:   URI(topic),
 	}
-	if err := c.Send(sub); err != nil {
+	err := c.Send(sub)
+	if err != nil {
 		return err
 	}
 	// wait to receive SUBSCRIBED message
-	msg, err := c.waitOnListener(id)
-	if err != nil {
+	var msg Message
+	if msg, err = c.waitOnListener(id); err != nil {
 		return err
 	} else if e, ok := msg.(*Error); ok {
 		return fmt.Errorf("error subscribing to topic '%v': %v", topic, e.Error)
@@ -355,7 +422,12 @@ func (c *Client) Subscribe(topic string, fn EventHandler) error {
 		return fmt.Errorf(formatUnexpectedMessage(msg, SUBSCRIBED))
 	} else {
 		// register the event handler with this subscription
-		c.events[subscribed.Subscription] = &eventDesc{topic, fn}
+		sync := make(chan struct{})
+		c.acts <- func() {
+			c.events[subscribed.Subscription] = &eventDesc{topic, fn}
+			sync <- struct{}{}
+		}
+		<-sync
 	}
 	return nil
 }
@@ -363,15 +435,23 @@ func (c *Client) Subscribe(topic string, fn EventHandler) error {
 // Unsubscribe removes the registered EventHandler from the topic.
 func (c *Client) Unsubscribe(topic string) error {
 	var (
+		sync           = make(chan struct{})
 		subscriptionID ID
 		found          bool
+		msg            Message
+		err            error
 	)
-	for id, desc := range c.events {
-		if desc.topic == topic {
-			subscriptionID = id
-			found = true
+	c.acts <- func() {
+		for id, desc := range c.events {
+			if desc.topic == topic {
+				subscriptionID = id
+				found = true
+				break
+			}
 		}
+		sync <- struct{}{}
 	}
+	<-sync
 	if !found {
 		return fmt.Errorf("Event %s is not registered with this client.", topic)
 	}
@@ -382,19 +462,23 @@ func (c *Client) Unsubscribe(topic string) error {
 		Request:      id,
 		Subscription: subscriptionID,
 	}
-	if err := c.Send(sub); err != nil {
+	err = c.Send(sub)
+	if err != nil {
 		return err
 	}
 	// wait to receive UNSUBSCRIBED message
-	msg, err := c.waitOnListener(id)
-	if err != nil {
+	if msg, err = c.waitOnListener(id); err != nil {
 		return err
 	} else if e, ok := msg.(*Error); ok {
 		return fmt.Errorf("error unsubscribing to topic '%v': %v", topic, e.Error)
 	} else if _, ok := msg.(*Unsubscribed); !ok {
 		return fmt.Errorf(formatUnexpectedMessage(msg, UNSUBSCRIBED))
 	}
-	delete(c.events, subscriptionID)
+	c.acts <- func() {
+		delete(c.events, subscriptionID)
+		sync <- struct{}{}
+	}
+	<-sync
 	return nil
 }
 
@@ -412,13 +496,14 @@ func (c *Client) Register(procedure string, fn MethodHandler, options map[string
 		Options:   options,
 		Procedure: URI(procedure),
 	}
-	if err := c.Send(register); err != nil {
+	err := c.Send(register)
+	if err != nil {
 		return err
 	}
 
 	// wait to receive REGISTERED message
-	msg, err := c.waitOnListener(id)
-	if err != nil {
+	var msg Message
+	if msg, err = c.waitOnListener(id); err != nil {
 		return err
 	} else if e, ok := msg.(*Error); ok {
 		return fmt.Errorf("error registering procedure '%v': %v", procedure, e.Error)
@@ -426,7 +511,12 @@ func (c *Client) Register(procedure string, fn MethodHandler, options map[string
 		return fmt.Errorf(formatUnexpectedMessage(msg, REGISTERED))
 	} else {
 		// register the event handler with this registration
-		c.procedures[registered.Registration] = &procedureDesc{procedure, fn}
+		sync := make(chan struct{})
+		c.acts <- func() {
+			c.procedures[registered.Registration] = &procedureDesc{procedure, fn}
+			sync <- struct{}{}
+		}
+		<-sync
 	}
 	return nil
 }
@@ -446,15 +536,23 @@ func (c *Client) BasicRegister(procedure string, fn BasicMethodHandler) error {
 // Unregister removes a procedure with the router
 func (c *Client) Unregister(procedure string) error {
 	var (
+		sync        = make(chan struct{})
 		procedureID ID
 		found       bool
+		msg         Message
+		err         error
 	)
-	for id, p := range c.procedures {
-		if p.name == procedure {
-			procedureID = id
-			found = true
+	c.acts <- func() {
+		for id, p := range c.procedures {
+			if p.name == procedure {
+				procedureID = id
+				found = true
+				break
+			}
 		}
+		sync <- struct{}{}
 	}
+	<-sync
 	if !found {
 		return fmt.Errorf("Procedure %s is not registered with this client.", procedure)
 	}
@@ -465,13 +563,12 @@ func (c *Client) Unregister(procedure string) error {
 		Request:      id,
 		Registration: procedureID,
 	}
-	if err := c.Send(unregister); err != nil {
+	if err = c.Send(unregister); err != nil {
 		return err
 	}
 
 	// wait to receive UNREGISTERED message
-	msg, err := c.waitOnListener(id)
-	if err != nil {
+	if msg, err = c.waitOnListener(id); err != nil {
 		return err
 	} else if e, ok := msg.(*Error); ok {
 		return fmt.Errorf("error unregister to procedure '%v': %v", procedure, e.Error)
@@ -479,7 +576,11 @@ func (c *Client) Unregister(procedure string) error {
 		return fmt.Errorf(formatUnexpectedMessage(msg, UNREGISTERED))
 	}
 	// register the event handler with this unregistration
-	delete(c.procedures, procedureID)
+	c.acts <- func() {
+		delete(c.procedures, procedureID)
+		sync <- struct{}{}
+	}
+	<-sync
 	return nil
 }
 
@@ -509,13 +610,14 @@ func (c *Client) Call(procedure string, args []interface{}, kwargs map[string]in
 		Arguments:   args,
 		ArgumentsKw: kwargs,
 	}
-	if err := c.Send(call); err != nil {
+	err := c.Send(call)
+	if err != nil {
 		return nil, err
 	}
 
 	// wait to receive RESULT message
-	msg, err := c.waitOnListener(id)
-	if err != nil {
+	var msg Message
+	if msg, err = c.waitOnListener(id); err != nil {
 		return nil, err
 	} else if e, ok := msg.(*Error); ok {
 		return nil, fmt.Errorf("error calling procedure '%v': %v", procedure, e.Error)

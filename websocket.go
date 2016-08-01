@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -15,18 +16,19 @@ type websocketPeer struct {
 	messages    chan Message
 	payloadType int
 	closed      bool
+	sendMutex   sync.Mutex
 }
 
 // NewWebsocketPeer connects to the websocket server at the specified url.
-func NewWebsocketPeer(serialization Serialization, url, origin string) (Peer, error) {
+func NewWebsocketPeer(serialization Serialization, url, origin string, tlscfg *tls.Config) (Peer, error) {
 	switch serialization {
 	case JSON:
 		return newWebsocketPeer(url, jsonWebsocketProtocol, origin,
-			new(JSONSerializer), websocket.TextMessage,
+			new(JSONSerializer), websocket.TextMessage, tlscfg,
 		)
 	case MSGPACK:
 		return newWebsocketPeer(url, msgpackWebsocketProtocol, origin,
-			new(MessagePackSerializer), websocket.BinaryMessage,
+			new(MessagePackSerializer), websocket.BinaryMessage, tlscfg,
 		)
 	default:
 		return nil, fmt.Errorf("Unsupported serialization: %v", serialization)
@@ -49,11 +51,12 @@ func NewSecureWebsocketPeer(serialization Serialization, url string, tlsClientCo
 	}
 }
 
-func newWebsocketPeer(url, protocol, origin string, serializer Serializer, payloadType int) (Peer, error) {
+func newWebsocketPeer(url, protocol, origin string, serializer Serializer, payloadType int, tlscfg *tls.Config, header http.Header) (Peer, error) {
 	dialer := websocket.Dialer{
-		Subprotocols: []string{protocol},
+		Subprotocols:    []string{protocol},
+		TLSClientConfig: tlscfg,
 	}
-	conn, _, err := dialer.Dial(url, nil)
+	conn, _, err := dialer.Dial(url, header)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +97,8 @@ func (ep *websocketPeer) Send(msg Message) error {
 	if err != nil {
 		return err
 	}
-	log.Debug("%s %+v", msg.MessageType().String(), msg)
+	ep.sendMutex.Lock()
+	defer ep.sendMutex.Unlock()
 	return ep.conn.WriteMessage(ep.payloadType, b)
 }
 func (ep *websocketPeer) Receive() <-chan Message {
