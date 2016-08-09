@@ -167,7 +167,7 @@ func (d *defaultDealer) Yield(callee Sender, msg *Yield) {
 				ArgumentsKw: msg.ArgumentsKw,
 			})
 			if err != nil {
-				log.Error("caller.Send returned an error: %s", err.Error())
+				log.Errorf("caller.Send returned an error: %s", err.Error())
 			}
 			log.Info("returned YIELD %v to caller as RESULT %v", msg.Request, callID)
 		}

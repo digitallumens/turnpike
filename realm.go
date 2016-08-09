@@ -249,7 +249,7 @@ func (r Realm) authenticate(details map[string]interface{}) (Message, error) {
 		if m, ok := method.(string); ok {
 			authmethods = append(authmethods, m)
 		} else {
-			log.Error("invalid authmethod value: %v", method)
+			log.Errorf("invalid authmethod value: %v", method)
 		}
 	}
 	for _, method := range authmethods {
