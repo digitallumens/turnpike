@@ -256,16 +256,16 @@ func (c *Client) Receive() {
 			c.notifyListener(msg, msg.Request)
 
 		case *Goodbye:
-			log.Info("client received Goodbye message")
+			log.Infof("client received Goodbye message")
 			break
 
 		default:
-			log.Error("unhandled message:", msg.MessageType(), msg)
+			log.Errorf("unhandled message:", msg.MessageType(), msg)
 		}
 	}
 
 	close(c.acts)
-	log.Info("client closed")
+	log.Infof("client closed")
 
 	if c.ReceiveDone != nil {
 		c.ReceiveDone <- true
@@ -278,7 +278,7 @@ func (c *Client) handleEvent(msg *Event) {
 		if event, ok := c.events[msg.Subscription]; ok {
 			go event.handler(msg.Arguments, msg.ArgumentsKw)
 		} else {
-			log.Info("no handler registered for subscription:", msg.Subscription)
+			log.Infof("no handler registered for subscription:", msg.Subscription)
 		}
 		sync <- struct{}{}
 	}
@@ -300,7 +300,7 @@ func (c *Client) notifyListener(msg Message, requestID ID) {
 	if ok {
 		l <- msg
 	} else {
-		log.Error("no listener for message", msg.MessageType(), requestID)
+		log.Errorf("no listener for message", msg.MessageType(), requestID)
 	}
 }
 
@@ -331,18 +331,18 @@ func (c *Client) handleInvocation(msg *Invocation) {
 				}
 
 				if err := c.Send(tosend); err != nil {
-					log.Info("error sending message:", err)
+					log.Infof("error sending message:", err)
 				}
 			}()
 		} else {
-			log.Info("no handler registered for registration:", msg.Registration)
+			log.Infof("no handler registered for registration:", msg.Registration)
 			if err := c.Send(&Error{
 				Type:    INVOCATION,
 				Request: msg.Request,
 				Details: make(map[string]interface{}),
 				Error:   URI(fmt.Sprintf("no handler for registration: %v", msg.Registration)),
 			}); err != nil {
-				log.Info("error sending message:", err)
+				log.Infof("error sending message:", err)
 			}
 		}
 		sync <- struct{}{}
@@ -351,7 +351,7 @@ func (c *Client) handleInvocation(msg *Invocation) {
 }
 
 func (c *Client) registerListener(id ID) {
-	log.Info("register listener: %v", id)
+	log.Infof("register listener: %v", id)
 	wait := make(chan Message, 1)
 	sync := make(chan struct{})
 	c.acts <- func() {
@@ -362,7 +362,7 @@ func (c *Client) registerListener(id ID) {
 }
 
 func (c *Client) waitOnListener(id ID) (msg Message, err error) {
-	log.Info("wait on listener:", id)
+	log.Infof("wait on listener:", id)
 	var (
 		sync = make(chan struct{})
 		wait chan Message

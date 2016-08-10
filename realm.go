@@ -40,7 +40,7 @@ func (r *Realm) getPeer(details map[string]interface{}) (Peer, error) {
 		details = make(map[string]interface{})
 	}
 	go r.handleSession(sess)
-	log.Info("Established internal session:", sess)
+	log.Infof("Established internal session:", sess)
 	return peerB, nil
 }
 
@@ -138,25 +138,25 @@ func (r *Realm) handleSession(sess Session) {
 		select {
 		case msg, open = <-c:
 			if !open {
-				log.Info("lost session:", sess)
+				log.Infof("lost session:", sess)
 				return
 			}
 		case reason := <-sess.kill:
 			logErr(sess.Send(&Goodbye{Reason: reason, Details: make(map[string]interface{})}))
-			log.Info("kill session %s: %v", sess, reason)
+			log.Infof("kill session %s: %v", sess, reason)
 			// TODO: wait for client Goodbye?
 			return
 		}
 
-		log.Info("[%s] %s: %+v", sess, msg.MessageType(), msg)
+		log.Infof("[%s] %s: %+v", sess, msg.MessageType(), msg)
 		if isAuthz, err := r.Authorizer.Authorize(sess, msg); !isAuthz {
 			errMsg := &Error{Type: msg.MessageType()}
 			if err != nil {
 				errMsg.Error = ErrAuthorizationFailed
-				log.Info("[%s] authorization failed: %v", sess, err)
+				log.Infof("[%s] authorization failed: %v", sess, err)
 			} else {
 				errMsg.Error = ErrNotAuthorized
-				log.Info("[%s] %s UNAUTHORIZED", sess, msg.MessageType())
+				log.Infof("[%s] %s UNAUTHORIZED", sess, msg.MessageType())
 			}
 			logErr(sess.Send(errMsg))
 			continue
@@ -167,7 +167,7 @@ func (r *Realm) handleSession(sess Session) {
 		switch msg := msg.(type) {
 		case *Goodbye:
 			logErr(sess.Send(&Goodbye{Reason: ErrGoodbyeAndOut, Details: make(map[string]interface{})}))
-			log.Info("[%s] leaving: %v", sess, msg.Reason)
+			log.Infof("[%s] leaving: %v", sess, msg.Reason)
 			return
 
 		// Broker messages
@@ -194,11 +194,11 @@ func (r *Realm) handleSession(sess Session) {
 				// the only type of ERROR message the router should receive
 				r.Dealer.Error(sess.Peer, msg)
 			} else {
-				log.Info("invalid ERROR message received: %v", msg)
+				log.Infof("invalid ERROR message received: %v", msg)
 			}
 
 		default:
-			log.Info("Unhandled message:", msg.MessageType())
+			log.Infof("Unhandled message:", msg.MessageType())
 		}
 	}
 }
@@ -222,7 +222,7 @@ func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcom
 	if err != nil {
 		return nil, err
 	}
-	log.Info("%s: %+v", msg.MessageType(), msg)
+	log.Infof("%s: %+v", msg.MessageType(), msg)
 	if authenticate, ok := msg.(*Authenticate); !ok {
 		return nil, fmt.Errorf("unexpected %s message received", msg.MessageType())
 	} else {
@@ -233,7 +233,7 @@ func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcom
 // Authenticate either authenticates a client or returns a challenge message if
 // challenge/response authentication is to be used.
 func (r Realm) authenticate(details map[string]interface{}) (Message, error) {
-	log.Info("details:", details)
+	log.Infof("details:", details)
 	if len(r.Authenticators) == 0 && len(r.CRAuthenticators) == 0 {
 		return &Welcome{}, nil
 	}
@@ -249,7 +249,7 @@ func (r Realm) authenticate(details map[string]interface{}) (Message, error) {
 		if m, ok := method.(string); ok {
 			authmethods = append(authmethods, m)
 		} else {
-			log.Errorf("invalid authmethod value: %v", method)
+			log.Errorff("invalid authmethod value: %v", method)
 		}
 	}
 	for _, method := range authmethods {

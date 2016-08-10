@@ -88,7 +88,7 @@ func (r *defaultRouter) RegisterRealm(uri URI, realm Realm) error {
 	}
 	realm.init()
 	r.realms[uri] = realm
-	log.Info("registered realm:", uri)
+	log.Infof("registered realm:", uri)
 	return nil
 }
 
@@ -103,7 +103,7 @@ func (r *defaultRouter) Accept(client Peer) error {
 	if err != nil {
 		return err
 	}
-	log.Info("%s: %+v", msg.MessageType(), msg)
+	log.Infof("%s: %+v", msg.MessageType(), msg)
 
 	hello, ok := msg.(*Hello)
 	if !ok {
@@ -144,7 +144,7 @@ func (r *defaultRouter) Accept(client Peer) error {
 	if err := client.Send(welcome); err != nil {
 		return err
 	}
-	log.Info("Established session: %d", welcome.Id)
+	log.Infof("Established session: %d", welcome.Id)
 
 	// session details
 	welcome.Details["session"] = welcome.Id
