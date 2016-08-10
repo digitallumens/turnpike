@@ -37,6 +37,6 @@ func logErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	log.Errorff("%s", err)
+	log.Errorf("%s", err)
 	return err
 }
