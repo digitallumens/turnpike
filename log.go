@@ -1,37 +1,24 @@
 package turnpike
 
 import (
-	// "errors"
-	// "fmt"
-	"github.com/op/go-logging"
-	// "os"
+	"github.com/digitallumens/logrus-stack"
+	logrus "github.com/sirupsen/logrus"
 )
 
-var log = logging.MustGetLogger("turnpike")
+var log = logrus.New()
 
-const format = "%{color}[%{time} %{level}]%{color:reset}[%{module}-%{shortfile}] %{message}"
+// setup logger for package
+func init() {
+	// Output using text formatter with full timestamps
+	log.Formatter = &logrus.JSONFormatter{}
+	// Only log the info severity or above.
+	log.Level = logrus.InfoLevel
 
-// // setup logger for package, writes to /dev/null by default
-// func init() {
-// 	if devNull, err := os.Create(os.DevNull); err != nil {
-// 		panic("could not create logger: " + err.Error())
-// 	} else if os.Getenv("DEBUG") != "" {
-// 		log = glog.New(os.Stderr, "", logFlags)
-// 	} else {
-// 		log = glog.New(devNull, "", 0)
-// 	}
-// }
-//
-// // change log output to stderr
-// func Debug() {
-// 	log = glog.New(os.Stderr, "", logFlags)
-// }
-//
-// func logErr(v ...interface{}) error {
-// 	err := errors.New(fmt.Sprintln(v...))
-// 	log.Infof(err)
-// 	return err
-// }
+	callerLevels := []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel}
+	stackLevels := []logrus.Level{}
+
+	log.Hooks.Add(logrus_stack.NewHook(callerLevels, stackLevels))
+}
 
 func logErr(err error) error {
 	if err == nil {
