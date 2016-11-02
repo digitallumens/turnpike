@@ -2,8 +2,11 @@ package turnpike
 
 import (
 	"fmt"
+	"net"
 	"sync"
 	"time"
+
+	logrus "github.com/sirupsen/logrus"
 )
 
 var defaultWelcomeDetails = map[string]interface{}{
@@ -103,7 +106,25 @@ func (r *defaultRouter) Accept(client Peer) error {
 	if err != nil {
 		return err
 	}
-	log.Infof("%s: %+v", msg.MessageType(), msg)
+
+	sessionID := NewID()
+
+	websocket, ok := client.(*websocketPeer)
+	if ok {
+		host, _, _ := net.SplitHostPort(websocket.conn.RemoteAddr().String())
+		log.WithFields(logrus.Fields{
+			"message_type": msg.MessageType().String(),
+			"message":      msg,
+			"remote_addr":  host,
+			"session_id":   sessionID,
+		}).Info("hello")
+	} else {
+		log.WithFields(logrus.Fields{
+			"message_type": msg.MessageType().String(),
+			"message":      msg,
+			"session_id":   sessionID,
+		}).Info("hello")
+	}
 
 	hello, ok := msg.(*Hello)
 	if !ok {
@@ -127,10 +148,16 @@ func (r *defaultRouter) Accept(client Peer) error {
 		}
 		logErr(client.Send(abort))
 		logErr(client.Close())
+
+		log.WithFields(logrus.Fields{
+			"error":      abort,
+			"session_id": sessionID,
+		}).Error("authentication failure")
+
 		return AuthenticationError(err.Error())
 	}
 
-	welcome.Id = NewID()
+	welcome.Id = sessionID
 
 	if welcome.Details == nil {
 		welcome.Details = make(map[string]interface{})
@@ -144,7 +171,10 @@ func (r *defaultRouter) Accept(client Peer) error {
 	if err := client.Send(welcome); err != nil {
 		return err
 	}
-	log.Infof("Established session: %d", welcome.Id)
+	log.WithFields(logrus.Fields{
+		"session_id": sessionID,
+		"realm":      hello.Realm,
+	}).Info("established session")
 
 	// session details
 	welcome.Details["session"] = welcome.Id

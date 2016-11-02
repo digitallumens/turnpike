@@ -151,7 +151,7 @@ func (r *Realm) handleSession(sess Session) {
 		}
 
 		log.WithFields(logrus.Fields{
-			"session_id":   sess.String(),
+			"session_id":   sess.Id,
 			"message_type": msg.MessageType().String(),
 			"message":      msg,
 		}).Info("new message")
@@ -173,8 +173,11 @@ func (r *Realm) handleSession(sess Session) {
 
 		switch msg := msg.(type) {
 		case *Goodbye:
-			logErr(sess.Send(&Goodbye{Reason: ErrGoodbyeAndOut, Details: make(map[string]interface{})}))
-			log.Infof("[%s] leaving: %v", sess, msg.Reason)
+			sess.Send(&Goodbye{Reason: ErrGoodbyeAndOut, Details: make(map[string]interface{})})
+			log.WithFields(logrus.Fields{
+				"session_id": sess.Id,
+				"reason":     msg.Reason,
+			}).Warning("goodbye")
 			return
 
 		// Broker messages
@@ -225,14 +228,28 @@ func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcom
 		return nil, err
 	}
 
+	log.WithFields(logrus.Fields{
+		"message_type": msg.MessageType().String(),
+		"message":      msg,
+	}).Info("challenge")
+
 	msg, err = GetMessageTimeout(client, r.AuthTimeout)
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("%s: %+v", msg.MessageType(), msg)
+
 	if authenticate, ok := msg.(*Authenticate); !ok {
 		return nil, fmt.Errorf("unexpected %s message received", msg.MessageType())
 	} else {
+		redacted := map[string]interface{}{
+			"Extra":     authenticate.Extra,
+			"Signature": "redacted",
+		}
+		log.WithFields(logrus.Fields{
+			"message_type": msg.MessageType().String(),
+			"message":      redacted,
+		}).Info("authenticate")
+
 		return r.checkResponse(challenge, authenticate)
 	}
 }
@@ -240,7 +257,6 @@ func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcom
 // Authenticate either authenticates a client or returns a challenge message if
 // challenge/response authentication is to be used.
 func (r Realm) authenticate(details map[string]interface{}) (Message, error) {
-	log.Infof("details:", details)
 	if len(r.Authenticators) == 0 && len(r.CRAuthenticators) == 0 {
 		return &Welcome{}, nil
 	}

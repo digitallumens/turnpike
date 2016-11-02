@@ -3,11 +3,13 @@ package turnpike
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	logrus "github.com/sirupsen/logrus"
 )
 
 type websocketPeer struct {
@@ -86,7 +88,10 @@ func (ep *websocketPeer) run() {
 			if ep.closed {
 				log.Debugf("peer connection closed")
 			} else {
-				log.Warningf("Error reading from peer: %s", err.Error())
+				host, _, _ := net.SplitHostPort(ep.conn.RemoteAddr().String())
+				log.WithFields(logrus.Fields{
+					"remote_addr": host,
+				}).Warning("error reading from peer")
 				ep.conn.Close()
 			}
 			close(ep.messages)

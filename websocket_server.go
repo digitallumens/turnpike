@@ -2,9 +2,11 @@ package turnpike
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/gorilla/websocket"
+	logrus "github.com/sirupsen/logrus"
 )
 
 const (
@@ -99,7 +101,12 @@ func (s *WebsocketServer) GetLocalClient(realm string, details map[string]interf
 
 // ServeHTTP handles a new HTTP connection.
 func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Infof("WebsocketServer.ServeHTTP %s %s", r.Method, r.RequestURI)
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	log.WithFields(logrus.Fields{
+		"remote_addr": host,
+		"method":      r.Method,
+		"path":        r.URL.Path,
+	}).Info("WebsocketServer.ServeHTTP")
 	// TODO: subprotocol?
 	conn, err := s.Upgrader.Upgrade(w, r, nil)
 	if err != nil {

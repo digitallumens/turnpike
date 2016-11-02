@@ -1,6 +1,10 @@
 package turnpike
 
-import "sync"
+import (
+	"sync"
+
+	logrus "github.com/sirupsen/logrus"
+)
 
 // A Dealer routes and manages RPC calls to callees.
 type Dealer interface {
@@ -54,15 +58,21 @@ func NewDefaultDealer() Dealer {
 func (d *defaultDealer) Register(callee Sender, msg *Register) {
 	reg := NewID()
 	d.lock.Lock()
-	if id, ok := d.registrations[msg.Procedure]; ok {
+	if _, ok := d.registrations[msg.Procedure]; ok {
 		d.lock.Unlock()
-		log.Infof("error: procedure already exists:", msg.Procedure, id)
-		callee.Send(&Error{
+		e := &Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: make(map[string]interface{}),
 			Error:   ErrProcedureAlreadyExists,
-		})
+		}
+		callee.Send(e)
+		log.WithFields(logrus.Fields{
+			"request_id":   msg.Request,
+			"message_type": msg.MessageType().String(),
+			"error":        e,
+		}).Info("procedure already exists")
+
 		return
 	}
 	d.procedures[reg] = remoteProcedure{callee, msg.Procedure}
@@ -105,12 +115,18 @@ func (d *defaultDealer) Call(caller Sender, msg *Call) {
 	d.lock.Lock()
 	if reg, ok := d.registrations[msg.Procedure]; !ok {
 		d.lock.Unlock()
-		caller.Send(&Error{
+		e := &Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: make(map[string]interface{}),
 			Error:   ErrNoSuchProcedure,
-		})
+		}
+		caller.Send(e)
+		log.WithFields(logrus.Fields{
+			"request_id":   msg.Request,
+			"message_type": msg.MessageType().String(),
+			"error":        e,
+		}).Info("no such procedure")
 	} else {
 		if rproc, ok := d.procedures[reg]; !ok {
 			// found a registration id, but doesn't match any remote procedure
@@ -136,9 +152,11 @@ func (d *defaultDealer) Call(caller Sender, msg *Call) {
 				Arguments:    msg.Arguments,
 				ArgumentsKw:  msg.ArgumentsKw,
 			})
-			log.Infof("dispatched CALL %v [%v] to callee as INVOCATION %v",
-				msg.Request, msg.Procedure, invocationID,
-			)
+			log.WithFields(logrus.Fields{
+				"request_id":    msg.Request,
+				"procedure":     msg.Procedure,
+				"invocation_id": invocationID,
+			}).Info("dispatched")
 		}
 	}
 }
