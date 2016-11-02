@@ -88,7 +88,7 @@ func (r *defaultRouter) RegisterRealm(uri URI, realm Realm) error {
 	}
 	realm.init()
 	r.realms[uri] = realm
-	log.Infof("registered realm:", uri)
+	log.WithField("uri", uri).Info("registered realm")
 	return nil
 }
 

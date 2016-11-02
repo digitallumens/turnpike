@@ -42,7 +42,7 @@ func (r *Realm) getPeer(details map[string]interface{}) (Peer, error) {
 		details = make(map[string]interface{})
 	}
 	go r.handleSession(sess)
-	log.Infof("Established internal session:", sess)
+	log.WithField("session_id", sess.Id).Info("established internal session")
 	return peerB, nil
 }
 
