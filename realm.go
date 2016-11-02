@@ -3,6 +3,8 @@ package turnpike
 import (
 	"fmt"
 	"time"
+
+	logrus "github.com/sirupsen/logrus"
 )
 
 const (
@@ -148,7 +150,12 @@ func (r *Realm) handleSession(sess Session) {
 			return
 		}
 
-		log.Infof("[%s] %s: %+v", sess, msg.MessageType(), msg)
+		log.WithFields(logrus.Fields{
+			"session_id":   sess.String(),
+			"message_type": msg.MessageType().String(),
+			"message":      msg,
+		}).Info("new message")
+
 		if isAuthz, err := r.Authorizer.Authorize(sess, msg); !isAuthz {
 			errMsg := &Error{Type: msg.MessageType()}
 			if err != nil {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	logrus "github.com/sirupsen/logrus"
 )
 
 var (
@@ -260,7 +262,10 @@ func (c *Client) Receive() {
 			break
 
 		default:
-			log.Errorf("unhandled message: %s %+v", msg.MessageType(), msg)
+			log.WithFields(logrus.Fields{
+				"message_type": msg.MessageType().String(),
+				"message":      msg,
+			}).Error("unhandled message")
 		}
 	}
 
@@ -278,7 +283,9 @@ func (c *Client) handleEvent(msg *Event) {
 		if event, ok := c.events[msg.Subscription]; ok {
 			go event.handler(msg.Arguments, msg.ArgumentsKw)
 		} else {
-			log.Infof("no handler registered for subscription: %+v", msg.Subscription)
+			log.WithFields(logrus.Fields{
+				"subscription": msg.Subscription,
+			}).Info("no handler registered for subscription")
 		}
 		sync <- struct{}{}
 	}
@@ -300,7 +307,10 @@ func (c *Client) notifyListener(msg Message, requestID ID) {
 	if ok {
 		l <- msg
 	} else {
-		log.Errorf("no listener for message %s %+v", msg.MessageType(), requestID)
+		log.WithFields(logrus.Fields{
+			"message_type": msg.MessageType().String(),
+			"request_id":   requestID,
+		}).Error("no listener for message")
 	}
 }
 
@@ -351,7 +361,7 @@ func (c *Client) handleInvocation(msg *Invocation) {
 }
 
 func (c *Client) registerListener(id ID) {
-	log.Infof("register listener: %v", id)
+	log.WithField("listener_id", id).Info("register listener")
 	wait := make(chan Message, 1)
 	sync := make(chan struct{})
 	c.acts <- func() {
@@ -362,7 +372,7 @@ func (c *Client) registerListener(id ID) {
 }
 
 func (c *Client) waitOnListener(id ID) (msg Message, err error) {
-	log.Infof("wait on listener: %v", id)
+	log.WithField("listener_id", id).Info("wait on listener")
 	var (
 		sync = make(chan struct{})
 		wait chan Message

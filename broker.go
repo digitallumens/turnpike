@@ -1,6 +1,10 @@
 package turnpike
 
-import "sync"
+import (
+	"sync"
+
+	logrus "github.com/sirupsen/logrus"
+)
 
 // Broker is the interface implemented by an object that handles routing EVENTS
 // from Publishers to Subscribers.
@@ -86,15 +90,23 @@ func (br *defaultBroker) Unsubscribe(sub Sender, msg *Unsubscribe) {
 			Error:   ErrNoSuchSubscription,
 		}
 		sub.Send(err)
-		log.Infof("Error unsubscribing: no such subscription %v", msg.Subscription)
+		log.WithFields(logrus.Fields{
+			"error":        err,
+			"subscription": msg.Subscription,
+		}).Error("Unsubscribe error: no such subscription")
 		return
 	}
 	delete(br.subscriptions, msg.Subscription)
 
 	if r, ok := br.routes[topic]; !ok {
-		log.Infof("Error unsubscribing: unable to find routes for %s topic", topic)
+		log.WithFields(logrus.Fields{
+			"topic": topic,
+		}).Error("Unsubscribe error: unable to find routes for topic")
 	} else if _, ok := r[msg.Subscription]; !ok {
-		log.Infof("Error unsubscribing: %s route does not exist for %v subscription", topic, msg.Subscription)
+		log.WithFields(logrus.Fields{
+			"topic":        topic,
+			"subscription": msg.Subscription,
+		}).Error("Unsubscribe error: route does not exist for subscription")
 	} else {
 		delete(r, msg.Subscription)
 		if len(r) == 0 {
