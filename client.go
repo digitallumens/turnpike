@@ -89,6 +89,11 @@ func (c *Client) run() {
 	}
 }
 
+// SetLogLevel sets the package logger's level
+func (c *Client) SetLogLevel(level logrus.Level) {
+	log.Level = level
+}
+
 // JoinRealm joins a WAMP realm, but does not handle challenge/response authentication.
 func (c *Client) JoinRealm(realm string, details map[string]interface{}) (map[string]interface{}, error) {
 	if details == nil {
