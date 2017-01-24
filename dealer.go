@@ -209,6 +209,7 @@ func (d *defaultDealer) Error(peer Sender, msg *Error) {
 			caller.Send(&Error{
 				Type:        CALL,
 				Request:     callID,
+				Error:       msg.Error,
 				Details:     make(map[string]interface{}),
 				Arguments:   msg.Arguments,
 				ArgumentsKw: msg.ArgumentsKw,
