@@ -144,7 +144,7 @@ func (d *defaultDealer) Call(caller *Session, msg *Call) {
 			invocationID := NewID()
 			d.invocations[invocationID] = msg.Request
 			d.lock.Unlock()
-			details := map[string]interface{}{};
+			details := map[string]interface{}{}
 
 			// Options{"disclose_me": true} -> Details{"caller": 3335656}
 			if val, ok := msg.Options["disclose_me"]; ok {
@@ -161,9 +161,11 @@ func (d *defaultDealer) Call(caller *Session, msg *Call) {
 				Arguments:    msg.Arguments,
 				ArgumentsKw:  msg.ArgumentsKw,
 			})
-			log.Printf("dispatched CALL: %v [%v] to callee as INVOCATION %v",
-				msg.Request, msg.Procedure, invocationID,
-			)
+			log.WithFields(logrus.Fields{
+				"request_id":    msg.Request,
+				"procedure":     msg.Procedure,
+				"invocation_id": invocationID,
+			}).Info("dispatched")
 		}
 	}
 }
@@ -173,7 +175,7 @@ func (d *defaultDealer) Yield(callee *Session, msg *Yield) {
 	if callID, ok := d.invocations[msg.Request]; !ok {
 		d.lock.Unlock()
 		// WAMP spec doesn't allow sending an error in response to a YIELD message
-		log.Errorf("received YIELD message with invalid invocation request ID:", msg.Request)
+		log.Errorf("received YIELD message with invalid invocation request ID: %d", msg.Request)
 	} else {
 		delete(d.invocations, msg.Request)
 		if caller, ok := d.calls[callID]; !ok {

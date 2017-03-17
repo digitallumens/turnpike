@@ -42,7 +42,7 @@ func (r *Realm) getPeer(details map[string]interface{}) (Peer, error) {
 	}
 	sess := Session{Peer: peerA, Id: NewID(), Details: details, kill: make(chan URI, 1)}
 	go r.handleSession(&sess)
-	log.Println("Established internal session:", sess)
+	log.WithField("session_id", sess.Id).Info("established internal session")
 	return peerB, nil
 }
 

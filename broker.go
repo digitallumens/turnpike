@@ -138,9 +138,14 @@ func (br *defaultBroker) Unsubscribe(sub *Session, msg *Unsubscribe) {
 
 	// clean up sender's subscription
 	if s, ok := br.sessions[sub]; !ok {
-		log.Println("Error unsubscribing: unable to find sender's subscriptions")
+		log.WithFields(logrus.Fields{
+			"sub": sub,
+		}).Error("Error unsubscribing: unable to find sender's subscriptions")
 	} else if _, ok := s[msg.Subscription]; !ok {
-		log.Printf("Error unsubscribing: sender does not contain %v subscription", msg.Subscription)
+		log.WithFields(logrus.Fields{
+			"sub":          sub,
+			"subscription": msg.Subscription,
+		}).Error("Error unsubscribing: sender does not contain subscription")
 	} else {
 		delete(s, msg.Subscription)
 		if len(s) == 0 {
