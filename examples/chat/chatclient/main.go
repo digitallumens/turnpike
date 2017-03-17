@@ -36,7 +36,7 @@ func main() {
 	username := os.Args[1]
 
 	// turnpike.Debug()
-	c, err := turnpike.NewWebsocketClient(turnpike.JSON, "ws://localhost:8000/")
+	c, err := turnpike.NewWebsocketClient(turnpike.JSON, "ws://localhost:8000/", nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func main() {
 	}
 
 	messages := make(chan message)
-	if err := c.Subscribe("chat", func(args []interface{}, kwargs map[string]interface{}) {
+	if err := c.Subscribe("chat", nil, func(args []interface{}, kwargs map[string]interface{}) {
 		if len(args) == 2 {
 			if from, ok := args[0].(string); !ok {
 				log.Info("First argument not a string:", args[0])
@@ -69,8 +69,8 @@ func main() {
 
 func sendMessages(c *turnpike.Client, messages chan message) {
 	for msg := range messages {
-		if err := c.Publish("chat", []interface{}{msg.From, msg.Message}, nil); err != nil {
-			log.Info("Error sending message:", err)
+		if err := c.Publish("chat", nil, []interface{}{msg.From, msg.Message}, nil); err != nil {
+			log.Println("Error sending message:", err)
 		}
 	}
 }
