@@ -3,6 +3,7 @@ package turnpike
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -42,7 +43,7 @@ func newWebsocketPeer(url, protocol string, serializer Serializer, payloadType i
 		Proxy:           http.ProxyFromEnvironment,
 		NetDial:         dial,
 	}
-	conn, _, err := dialer.Dial(url, header)
+	conn, _, err := dialer.Dial(url, nil)
 	if err != nil {
 		return nil, err
 	}
