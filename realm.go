@@ -151,13 +151,9 @@ func (r *Realm) handleSession(sess *Session) {
 			return
 		}
 
-		redactRegexp := regexp.MustCompile("\"token\":\"[^\"]*\"")
-		msgBytes, _ := json.Marshal(msg)
-		redactedMsgString := redactRegexp.ReplaceAll(msgBytes, []byte("\"token\":\"redacted\""))
 		log.WithFields(logrus.Fields{
 			"session_id":   sess.Id,
 			"message_type": msg.MessageType().String(),
-			"message":      redactedMsgString,
 		}).Info("new message")
 
 		if isAuthz, err := r.Authorizer.Authorize(sess, msg); !isAuthz {
