@@ -1,9 +1,7 @@
 package turnpike
 
 import (
-	"encoding/json"
 	"fmt"
-	"regexp"
 	"time"
 
 	logrus "github.com/sirupsen/logrus"
