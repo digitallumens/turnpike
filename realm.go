@@ -230,16 +230,17 @@ func (r *Realm) handleSession(sess *Session) {
 	}
 }
 
-func redactMessage(msg *Message) *Message {
-	redacted := *msg
-	switch redacted := redacted.(type) {
+func redactMessage(msg *Message) Message {
+	var redacted Message
+	switch msg := (*msg).(type) {
 	case *Call:
+		redacted := *msg
 		_, ok := redacted.ArgumentsKw["token"]
 		if ok {
 			redacted.ArgumentsKw["token"] = "redacted"
 		}
 	}
-	return &redacted
+	return redacted
 }
 
 func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcome, error) {
