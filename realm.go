@@ -149,7 +149,7 @@ func (r *Realm) handleSession(sess *Session) {
 			return
 		}
 
-		redactedMsg := redactMessage(msg)
+		redactedMsg := redactMessage(&msg)
 
 		log.WithFields(logrus.Fields{
 			"session_id":   sess.Id,
@@ -230,7 +230,7 @@ func (r *Realm) handleSession(sess *Session) {
 	}
 }
 
-func redactMessage(msg Message) Message {
+func redactMessage(msg *Message) *Message {
 	redacted := msg
 	switch redacted := redacted.(type) {
 	case *Call:
