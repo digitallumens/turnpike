@@ -233,24 +233,19 @@ func (r *Realm) handleSession(sess *Session) {
 func redactMessage(msg Message) Message {
 	switch msg := msg.(type) {
 	case *Call:
-		_, ok := msg.ArgumentsKw["token"]
-		if ok {
-			var redacted Call
-			redacted.Request = msg.Request
-			redacted.Arguments = append(redacted.Arguments, msg.Arguments...)
-			for k, v := range msg.ArgumentsKw {
-				if k == "token" {
-					v = "redacted"
-				}
-				redacted.ArgumentsKw[k] = v
+		var redacted Call
+		redacted.Request = msg.Request
+		redacted.Arguments = append(redacted.Arguments, msg.Arguments...)
+		for k, v := range msg.ArgumentsKw {
+			if k == "token" {
+				v = "redacted"
 			}
-			for k, v := range msg.Options {
-				redacted.Options[k] = v
-			}
-			return &redacted
-		} else {
-			return msg
+			redacted.ArgumentsKw[k] = v
 		}
+		for k, v := range msg.Options {
+			redacted.Options[k] = v
+		}
+		return &redacted
 	}
 	return msg
 }
