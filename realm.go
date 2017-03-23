@@ -236,12 +236,14 @@ func redactMessage(msg Message) Message {
 		var redacted Call
 		redacted.Request = msg.Request
 		redacted.Arguments = append(redacted.Arguments, msg.Arguments...)
+		redacted.ArgumentsKw = make(map[string]interface{})
 		for k, v := range msg.ArgumentsKw {
 			if k == "token" {
 				v = "redacted"
 			}
 			redacted.ArgumentsKw[k] = v
 		}
+		redacted.Options = make(map[string]interface{})
 		for k, v := range msg.Options {
 			redacted.Options[k] = v
 		}
