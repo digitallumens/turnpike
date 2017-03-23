@@ -230,9 +230,9 @@ func (r *Realm) handleSession(sess *Session) {
 	}
 }
 
-func redactMessage(msg *Message) Message {
+func redactMessage(msg Message) Message {
 	var redacted Message
-	switch msg := (*msg).(type) {
+	switch msg := msg.(type) {
 	case *Call:
 		redacted := *msg
 		_, ok := redacted.ArgumentsKw["token"]
