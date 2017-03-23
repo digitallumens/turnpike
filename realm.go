@@ -1,7 +1,6 @@
 package turnpike
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -231,22 +230,23 @@ func (r *Realm) handleSession(sess *Session) {
 	}
 }
 
-func redactMessage(msg Message) string {
-	var redacted []byte
+func redactMessage(msg Message) Message {
 	switch msg := msg.(type) {
 	case *Call:
-		token, ok := msg.ArgumentsKw["token"]
+		_, ok := msg.ArgumentsKw["token"]
 		if ok {
-			msg.ArgumentsKw["token"] = "redacted"
+			var redacted Call
+			redacted.Request = msg.Request
+			redacted.Options = msg.Options
+			redacted.Arguments = msg.Arguments
+			redacted.ArgumentsKw = msg.ArgumentsKw
+			redacted.ArgumentsKw["token"] = "redacted"
+			return &redacted
+		} else {
+			return msg
 		}
-		redacted, _ = json.Marshal(msg)
-		if ok {
-			msg.ArgumentsKw["token"] = token
-		}
-	default:
-		redacted, _ = json.Marshal(msg)
 	}
-	return string(redacted)
+	return msg
 }
 
 func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcome, error) {
