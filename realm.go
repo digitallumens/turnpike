@@ -149,9 +149,12 @@ func (r *Realm) handleSession(sess *Session) {
 			return
 		}
 
+		redactedMsg := redactMessage(msg)
+
 		log.WithFields(logrus.Fields{
 			"session_id":   sess.Id,
 			"message_type": msg.MessageType().String(),
+			"message":      redactedMsg,
 		}).Info("new message")
 
 		if isAuthz, err := r.Authorizer.Authorize(sess, msg); !isAuthz {
@@ -225,6 +228,18 @@ func (r *Realm) handleSession(sess *Session) {
 			log.Infof("Unhandled message:", msg.MessageType())
 		}
 	}
+}
+
+func redactMessage(msg Message) Message {
+	redacted := msg
+	switch redacted := redacted.(type) {
+	case *Call:
+		_, ok := redacted.ArgumentsKw["token"]
+		if ok {
+			redacted.ArgumentsKw["token"] = "redacted"
+		}
+	}
+	return redacted
 }
 
 func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcome, error) {
