@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	c, err := turnpike.NewWebsocketClient(turnpike.JSON, "ws://localhost:8000/")
+	c, err := turnpike.NewWebsocketClient(turnpike.JSON, "ws://localhost:8000/", nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -22,14 +22,14 @@ func main() {
 	onJoin := func(args []interface{}, kwargs map[string]interface{}) {
 		log.Info("session joined:", args[0])
 	}
-	if err := c.Subscribe("wamp.session.on_join", onJoin); err != nil {
+	if err := c.Subscribe("wamp.session.on_join", nil, onJoin); err != nil {
 		log.Fatalln("Error subscribing to channel:", err)
 	}
 
 	onLeave := func(args []interface{}, kwargs map[string]interface{}) {
 		log.Info("session left:", args[0])
 	}
-	if err := c.Subscribe("wamp.session.on_leave", onLeave); err != nil {
+	if err := c.Subscribe("wamp.session.on_leave", nil, onLeave); err != nil {
 		log.Fatalln("Error subscribing to channel:", err)
 	}
 

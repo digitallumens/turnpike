@@ -3,7 +3,6 @@ package turnpike
 import (
 	"crypto/tls"
 	"fmt"
-	"net/http"
 	"time"
 
 	logrus "github.com/sirupsen/logrus"
@@ -56,8 +55,8 @@ type eventDesc struct {
 
 // NewWebsocketClient creates a new websocket client connected to the specified
 // `url` and using the specified `serialization`.
-func NewWebsocketClient(serialization Serialization, url string, tlscfg *tls.Config, header http.Header) (*Client, error) {
-	p, err := NewWebsocketPeer(serialization, url, "", tlscfg, header)
+func NewWebsocketClient(serialization Serialization, url string, tlscfg *tls.Config, dial DialFunc) (*Client, error) {
+	p, err := NewWebsocketPeer(serialization, url, tlscfg, dial)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +67,7 @@ func NewWebsocketClient(serialization Serialization, url string, tlscfg *tls.Con
 func NewClient(p Peer) *Client {
 	c := &Client{
 		Peer:           p,
-		ReceiveTimeout: 30 * time.Second,
+		ReceiveTimeout: 10 * time.Second,
 		listeners:      make(map[ID]chan Message),
 		events:         make(map[ID]*eventDesc),
 		procedures:     make(map[ID]*procedureDesc),
@@ -214,7 +213,7 @@ func formatUnknownMap(m map[string]interface{}) string {
 // LeaveRealm leaves the current realm without closing the connection to the server.
 func (c *Client) LeaveRealm() error {
 	if err := c.Send(goodbyeClient); err != nil {
-		return fmt.Errorf("error leaving realm: %s", err)
+		return fmt.Errorf("error leaving realm: %v", err)
 	}
 	return nil
 }
@@ -225,7 +224,7 @@ func (c *Client) Close() error {
 		return err
 	}
 	if err := c.Peer.Close(); err != nil {
-		return fmt.Errorf("error closing client connection: %s", err)
+		return fmt.Errorf("error closing client connection: %v", err)
 	}
 	return nil
 }
@@ -406,12 +405,15 @@ func (c *Client) waitOnListener(id ID) (msg Message, err error) {
 type EventHandler func(args []interface{}, kwargs map[string]interface{})
 
 // Subscribe registers the EventHandler to be called for every message in the provided topic.
-func (c *Client) Subscribe(topic string, fn EventHandler) error {
+func (c *Client) Subscribe(topic string, options map[string]interface{}, fn EventHandler) error {
+	if options == nil {
+		options = make(map[string]interface{})
+	}
 	id := NewID()
 	c.registerListener(id)
 	sub := &Subscribe{
 		Request: id,
-		Options: make(map[string]interface{}),
+		Options: options,
 		Topic:   URI(topic),
 	}
 	err := c.Send(sub)
@@ -563,7 +565,6 @@ func (c *Client) Unregister(procedure string) error {
 		return fmt.Errorf("Procedure %s is not registered with this client.", procedure)
 	}
 	id := NewID()
-
 	c.registerListener(id)
 	unregister := &Unregister{
 		Request:      id,
@@ -591,28 +592,37 @@ func (c *Client) Unregister(procedure string) error {
 }
 
 // Publish publishes an EVENT to all subscribed peers.
-func (c *Client) Publish(topic string, args []interface{}, kwargs map[string]interface{}) error {
-	if c == nil {
-		return nil
+func (c *Client) Publish(topic string, options map[string]interface{}, args []interface{}, kwargs map[string]interface{}) error {
+	if options == nil {
+		options = make(map[string]interface{})
 	}
 	return c.Send(&Publish{
 		Request:     NewID(),
-		Options:     make(map[string]interface{}),
+		Options:     options,
 		Topic:       URI(topic),
 		Arguments:   args,
 		ArgumentsKw: kwargs,
 	})
 }
 
+type RPCError struct {
+	ErrorMessage *Error
+	Procedure    string
+}
+
+func (rpc RPCError) Error() string {
+	return fmt.Sprintf("error calling procedure '%v': %v: %v: %v", rpc.Procedure, rpc.ErrorMessage.Error, rpc.ErrorMessage.Arguments, rpc.ErrorMessage.ArgumentsKw)
+}
+
 // Call calls a procedure given a URI.
-func (c *Client) Call(procedure string, args []interface{}, kwargs map[string]interface{}) (*Result, error) {
+func (c *Client) Call(procedure string, options map[string]interface{}, args []interface{}, kwargs map[string]interface{}) (*Result, error) {
 	id := NewID()
 	c.registerListener(id)
 
 	call := &Call{
 		Request:     id,
 		Procedure:   URI(procedure),
-		Options:     make(map[string]interface{}),
+		Options:     options,
 		Arguments:   args,
 		ArgumentsKw: kwargs,
 	}
@@ -626,7 +636,7 @@ func (c *Client) Call(procedure string, args []interface{}, kwargs map[string]in
 	if msg, err = c.waitOnListener(id); err != nil {
 		return nil, err
 	} else if e, ok := msg.(*Error); ok {
-		return nil, fmt.Errorf("error calling procedure '%v': %v", procedure, e.Error)
+		return nil, RPCError{e, procedure}
 	} else if result, ok := msg.(*Result); !ok {
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, RESULT))
 	} else {
