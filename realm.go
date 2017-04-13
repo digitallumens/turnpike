@@ -158,7 +158,7 @@ func (r *Realm) handleSession(sess *Session) {
 		}).Info("new message")
 
 		if isAuthz, err := r.Authorizer.Authorize(sess, msg); !isAuthz {
-			errMsg := &Error{Type: msg.MessageType()}
+			errMsg := &Error{Type: msg.MessageType(), Details: map[string]interface{}{}}
 			switch msg := msg.(type) {
 			case *Publish:
 				errMsg.Request = msg.Request
