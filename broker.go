@@ -21,7 +21,7 @@ type Broker interface {
 
 // A super simple broker that matches URIs to Subscribers.
 type defaultBroker struct {
-	routes        map[URI]map[ID]*Session
+	routes        map[URI]map[ID]Sender
 	subscriptions map[ID]URI
 	subscribers   map[*Session][]ID
 
@@ -34,7 +34,7 @@ type defaultBroker struct {
 // Subscribers.
 func NewDefaultBroker() Broker {
 	return &defaultBroker{
-		routes:        make(map[URI]map[ID]*Session),
+		routes:        make(map[URI]map[ID]Sender),
 		subscriptions: make(map[ID]URI),
 		subscribers:   make(map[*Session][]ID),
 	}
@@ -85,7 +85,6 @@ func (br *defaultBroker) Publish(sess *Session, msg *Publish) {
 			go sub.Send(&event)
 		}
 	}
-	br.lock.RUnlock()
 
 	// only send published message if acknowledge is present and set to true
 	if doPub, _ := msg.Options["acknowledge"].(bool); doPub {
@@ -104,7 +103,6 @@ func (br *defaultBroker) Subscribe(sess *Session, msg *Subscribe) {
 	id := br.nextRequestId()
 	br.routes[msg.Topic][id] = sess.Peer
 	br.subscriptions[id] = msg.Topic
-	br.lock.Unlock()
 
 	// subscribers
 	ids, ok := br.subscribers[sess]
@@ -146,16 +144,13 @@ func (br *defaultBroker) unsubscribe(sess *Session, id ID) bool {
 	}
 	delete(br.subscriptions, id)
 
-	// clean up routes
 	if r, ok := br.routes[topic]; !ok {
-		log.WithFields(logrus.Fields{
-			"topic": topic,
-		}).Error("Unsubscribe error: unable to find routes for topic")
+		log.WithField("topic", topic).Error("unsubscribe error: unable to find routes")
 	} else if _, ok := r[id]; !ok {
 		log.WithFields(logrus.Fields{
-			"topic":        topic,
-			"subscription": msg.Subscription,
-		}).Error("Unsubscribe error: route does not exist for subscription")
+			"topic": topic,
+			"id":    id,
+		}).Error("unsubscribe error: route does not exist for subscription")
 	} else {
 		delete(r, id)
 		if len(r) == 0 {

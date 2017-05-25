@@ -63,8 +63,6 @@ func (r Realm) Close() {
 		}
 		sess.kill <- ErrSystemShutdown
 	}
-
-	close(r.acts)
 }
 
 func (r *Realm) init() {
@@ -95,30 +93,14 @@ func (r *Realm) init() {
 	if r.AuthTimeout == 0 {
 		r.AuthTimeout = defaultAuthTimeout
 	}
-	go r.localClient.Receive()
-	go r.run()
-}
-
-func (r *Realm) run() {
-	for {
-		if act, ok := <-r.acts; ok {
-			act()
-		} else {
-			return
-		}
-	}
 }
 
 func (l *localClient) onJoin(details map[string]interface{}) {
-	l.Lock()
-	defer l.Unlock()
-	l.Publish("wamp.session.on_join", []interface{}{details}, nil)
+	l.Publish("wamp.session.on_join", nil, []interface{}{details}, nil)
 }
 
 func (l *localClient) onLeave(session ID) {
-	l.Lock()
-	defer l.Unlock()
-	l.Publish("wamp.session.on_leave", []interface{}{session}, nil)
+	l.Publish("wamp.session.on_leave", nil, []interface{}{session}, nil)
 }
 
 func (r *Realm) doOne(c <-chan Message, sess *Session) bool {
@@ -257,7 +239,6 @@ func (r *Realm) handleSession(sess *Session) {
 
 	for r.doOne(c, sess) {
 	}
-	return msg
 }
 
 func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcome, error) {
@@ -275,28 +256,14 @@ func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcom
 		return nil, err
 	}
 
-	log.WithFields(logrus.Fields{
-		"message_type": msg.MessageType().String(),
-		"message":      msg,
-	}).Info("challenge")
-
 	msg, err = GetMessageTimeout(client, r.AuthTimeout)
 	if err != nil {
 		return nil, err
 	}
-
+	log.Printf("%s: %+v", msg.MessageType(), msg)
 	if authenticate, ok := msg.(*Authenticate); !ok {
 		return nil, fmt.Errorf("unexpected %s message received", msg.MessageType())
 	} else {
-		redacted := map[string]interface{}{
-			"Extra":     authenticate.Extra,
-			"Signature": "redacted",
-		}
-		log.WithFields(logrus.Fields{
-			"message_type": msg.MessageType().String(),
-			"message":      redacted,
-		}).Info("authenticate")
-
 		return r.checkResponse(challenge, authenticate)
 	}
 }
@@ -304,6 +271,7 @@ func (r *Realm) handleAuth(client Peer, details map[string]interface{}) (*Welcom
 // Authenticate either authenticates a client or returns a challenge message if
 // challenge/response authentication is to be used.
 func (r Realm) authenticate(details map[string]interface{}) (Message, error) {
+	log.Println("details:", details)
 	if len(r.Authenticators) == 0 && len(r.CRAuthenticators) == 0 {
 		return &Welcome{}, nil
 	}
@@ -319,7 +287,7 @@ func (r Realm) authenticate(details map[string]interface{}) (Message, error) {
 		if m, ok := method.(string); ok {
 			authmethods = append(authmethods, m)
 		} else {
-			log.Errorf("invalid authmethod value: %v", method)
+			log.Printf("invalid authmethod value: %v", method)
 		}
 	}
 	for _, method := range authmethods {

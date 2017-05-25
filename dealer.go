@@ -66,12 +66,13 @@ func (d *defaultDealer) Register(sess *Session, msg *Register) {
 	defer d.Unlock()
 
 	if id, ok := d.procedures[msg.Procedure]; ok {
-		sess.Peer.Send(&Error{
+		e := &Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: make(map[string]interface{}),
 			Error:   ErrProcedureAlreadyExists,
-		})
+		}
+		sess.Peer.Send(e)
 		log.WithFields(logrus.Fields{
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
@@ -86,7 +87,10 @@ func (d *defaultDealer) Register(sess *Session, msg *Register) {
 	d.registrations[registrationId] = msg.Procedure
 
 	// d.addCalleeRegistration(sess, reg)
-	log.Infof("registered procedure %v [%v]", reg, msg.Procedure)
+	log.WithFields(logrus.Fields{
+		"registration_id": registrationId,
+		"procedure":       msg.Procedure,
+	}).Info("registered procedure")
 	sess.Peer.Send(&Registered{
 		Request:      msg.Request,
 		Registration: registrationId,
@@ -128,12 +132,13 @@ func (d *defaultDealer) Call(sess *Session, msg *Call) {
 	defer d.invocationLock.Unlock()
 
 	if rproc, ok := d.procedures[msg.Procedure]; !ok {
-		sess.Peer.Send(&Error{
+		e := &Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: make(map[string]interface{}),
 			Error:   ErrNoSuchProcedure,
-		})
+		}
+		sess.Peer.Send(e)
 		log.WithFields(logrus.Fields{
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
