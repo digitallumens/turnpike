@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/howeyc/gopass"
-	"gopkg.in/jcelliott/turnpike.v2"
+	"gopkg.in/beatgammit/turnpike.v2"
 )
 
 var password []byte
@@ -29,13 +29,14 @@ func main() {
 	turnpike.Debug()
 	fmt.Println("Hint: the password is 'password'")
 	fmt.Print("Password: ")
+
 	var err error
 	password, err = gopass.GetPasswd()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Error getting the password:", err)
 	}
 
-	c, err := turnpike.NewWebsocketClient(turnpike.JSON, "ws://localhost:8000/ws", nil, nil)
+	c, err := turnpike.NewWebsocketClient(turnpike.JSON, "ws://localhost:8000/ws", nil)
 	if err != nil {
 		log.Fatal(err)
 	}

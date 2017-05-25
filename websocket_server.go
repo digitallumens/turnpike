@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	logrus "github.com/sirupsen/logrus"
@@ -31,6 +33,14 @@ type protocol struct {
 	serializer  Serializer
 }
 
+// ConnectionConfig is the configs of a connection.
+type ConnectionConfig struct {
+	MaxMsgSize   int64
+	WriteTimeout time.Duration
+	PingTimeout  time.Duration
+	IdleTimeout  time.Duration
+}
+
 // WebsocketServer handles websocket connections.
 type WebsocketServer struct {
 	Router
@@ -42,6 +52,9 @@ type WebsocketServer struct {
 	TextSerializer Serializer
 	// The serializer to use for binary frames. Defaults to JSONSerializer.
 	BinarySerializer Serializer
+	ConnectionConfig
+
+	lock sync.RWMutex
 }
 
 // NewWebsocketServer creates a new WebsocketServer from a map of realms
@@ -67,6 +80,10 @@ func newWebsocketServer(r Router) *WebsocketServer {
 	s := &WebsocketServer{
 		Router:    r,
 		protocols: make(map[string]protocol),
+		ConnectionConfig: ConnectionConfig{
+			// PingTimeout: 3 * time.Minute,
+			WriteTimeout: 10 * time.Second,
+		},
 	}
 	s.Upgrader = &websocket.Upgrader{}
 	s.RegisterProtocol(jsonWebsocketProtocol, websocket.TextMessage, new(JSONSerializer))
@@ -80,6 +97,8 @@ func (s *WebsocketServer) RegisterProtocol(proto string, payloadType int, serial
 	if payloadType != websocket.TextMessage && payloadType != websocket.BinaryMessage {
 		return invalidPayload(payloadType)
 	}
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	if _, ok := s.protocols[proto]; ok {
 		return protocolExists(proto)
 	}
@@ -120,10 +139,14 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 	var serializer Serializer
 	var payloadType int
+	s.lock.RLock()
 	if proto, ok := s.protocols[conn.Subprotocol()]; ok {
+		s.lock.RUnlock()
 		serializer = proto.serializer
 		payloadType = proto.payloadType
 	} else {
+		s.lock.RUnlock()
+
 		// TODO: this will not currently ever be hit because
 		//       gorilla/websocket will reject the conncetion
 		//       if the subprotocol isn't registered
@@ -141,10 +164,13 @@ func (s *WebsocketServer) handleWebsocket(conn *websocket.Conn) {
 	}
 
 	peer := websocketPeer{
-		conn:        conn,
-		serializer:  serializer,
-		messages:    make(chan Message, 10),
-		payloadType: payloadType,
+		conn:             conn,
+		serializer:       serializer,
+		sendMsgs:         make(chan Message, 16),
+		messages:         make(chan Message, 100),
+		payloadType:      payloadType,
+		closing:          make(chan struct{}),
+		ConnectionConfig: &s.ConnectionConfig,
 	}
 	go peer.run()
 

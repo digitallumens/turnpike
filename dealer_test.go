@@ -2,6 +2,7 @@ package turnpike
 
 import (
 	"testing"
+	"time"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -22,12 +23,12 @@ func TestRegister(t *testing.T) {
 
 		Convey("The dealer should have the endpoint registered", func() {
 			reg := callee.received.(*Registered).Registration
-			reg2, ok := dealer.registrations[testProcedure]
+			proc, ok := dealer.procedures[testProcedure]
 			So(ok, ShouldBeTrue)
-			So(reg, ShouldEqual, reg2)
-			proc, ok := dealer.procedures[reg]
+			So(reg, ShouldEqual, proc.Registration)
+			procedure, ok := dealer.registrations[reg]
 			So(ok, ShouldBeTrue)
-			So(proc.Procedure, ShouldEqual, testProcedure)
+			So(procedure, ShouldEqual, testProcedure)
 		})
 
 		Convey("The same procedure cannot be registered more than once", func() {
@@ -59,9 +60,9 @@ func TestUnregister(t *testing.T) {
 		})
 
 		Convey("The dealer should no longer have the endpoint registered", func() {
-			_, ok := dealer.registrations[testProcedure]
+			_, ok := dealer.procedures[testProcedure]
 			So(ok, ShouldBeFalse)
-			_, ok = dealer.procedures[reg]
+			_, ok = dealer.registrations[reg]
 			So(ok, ShouldBeFalse)
 		})
 	})
@@ -83,7 +84,7 @@ func TestCall(t *testing.T) {
 			dealer.Call(callerSession, msg)
 
 			Convey("The caller should have received an ERROR message", func() {
-				err := caller.received.(*Error)
+				err := caller.getReceived().(*Error)
 				So(err.Error, ShouldEqual, ErrNoSuchProcedure)
 				So(err.Details, ShouldNotBeNil)
 			})
@@ -101,9 +102,13 @@ func TestCall(t *testing.T) {
 					msg := &Yield{Request: inv.Request}
 					dealer.Yield(sess, msg)
 
+					// give it some time to propagate
+					time.Sleep(time.Millisecond)
+
 					Convey("The caller should have received a RESULT message", func() {
-						So(caller.received.MessageType(), ShouldEqual, RESULT)
-						So(caller.received.(*Result).Request, ShouldEqual, 125)
+						So(caller.getReceived(), ShouldNotBeNil)
+						So(caller.getReceived().MessageType(), ShouldEqual, RESULT)
+						So(caller.getReceived().(*Result).Request, ShouldEqual, 125)
 					})
 				})
 
@@ -111,9 +116,13 @@ func TestCall(t *testing.T) {
 					msg := &Error{Request: inv.Request}
 					dealer.Error(sess, msg)
 
+					// give it some time to propagate
+					time.Sleep(time.Millisecond)
+
 					Convey("The caller should have received an ERROR message", func() {
-						So(caller.received.MessageType(), ShouldEqual, ERROR)
-						So(caller.received.(*Error).Request, ShouldEqual, 125)
+						So(caller.getReceived(), ShouldNotBeNil)
+						So(caller.getReceived().MessageType(), ShouldEqual, ERROR)
+						So(caller.getReceived().(*Error).Request, ShouldEqual, 125)
 					})
 				})
 			})
@@ -130,8 +139,8 @@ func TestRemovePeer(t *testing.T) {
 		sess := &Session{Peer: callee}
 		dealer.Register(sess, msg)
 		reg := callee.received.(*Registered).Registration
-		So(dealer.registrations, ShouldContainKey, testProcedure)
-		So(dealer.procedures, ShouldContainKey, reg)
+		So(dealer.procedures, ShouldContainKey, testProcedure)
+		So(dealer.registrations, ShouldContainKey, reg)
 
 		Convey("Calling RemoveSession should remove the registration", func() {
 			dealer.RemoveSession(sess)
