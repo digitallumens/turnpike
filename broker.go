@@ -117,16 +117,6 @@ func (br *defaultBroker) Subscribe(sess *Session, msg *Subscribe) {
 	go sess.Peer.Send(&Subscribed{Request: msg.Request, Subscription: id})
 }
 
-func (br *defaultBroker) RemoveSession(sess *Session) {
-	log.Printf("broker remove peer %p", sess)
-	br.Lock()
-	defer br.Unlock()
-
-	for _, id := range br.subscribers[sess] {
-		br.unsubscribe(sess, id)
-	}
-}
-
 func (br *defaultBroker) Unsubscribe(sess *Session, msg *Unsubscribe) {
 	br.Lock()
 	defer br.Unlock()
@@ -189,26 +179,12 @@ func (br *defaultBroker) unsubscribe(sess *Session, id ID) bool {
 	return true
 }
 
-func (br *defaultBroker) RemoveSession(sub *Session) {
-	br.lock.Lock()
-	defer br.lock.Unlock()
+func (br *defaultBroker) RemoveSession(sess *Session) {
+	log.WithField("session_id", sess.Id).Info("broker remove peer")
+	br.Lock()
+	defer br.Unlock()
 
-	for id, _ := range br.sessions[sub] {
-		topic, ok := br.subscriptions[id]
-		if !ok {
-			continue
-		}
-		delete(br.subscriptions, id)
-
-		// clean up routes
-		if r, ok := br.routes[topic]; ok {
-			if _, ok := r[id]; ok {
-				delete(r, id)
-				if len(r) == 0 {
-					delete(br.routes, topic)
-				}
-			}
-		}
+	for _, id := range br.subscribers[sess] {
+		br.unsubscribe(sess, id)
 	}
-	delete(br.sessions, sub)
 }
