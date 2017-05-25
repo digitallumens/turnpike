@@ -71,7 +71,7 @@ func (d *defaultDealer) Register(sess *Session, msg *Register) {
 			Request: msg.Request,
 			Details: make(map[string]interface{}),
 			Error:   ErrProcedureAlreadyExists,
-		}
+		})
 		log.WithFields(logrus.Fields{
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
@@ -99,7 +99,7 @@ func (d *defaultDealer) Unregister(sess *Session, msg *Unregister) {
 
 	if procedure, ok := d.registrations[msg.Registration]; !ok {
 		// the registration doesn't exist
-		log.WithField("registration_id": msg.Registration).Error("error: no such registration")
+		log.WithField("registration_id", msg.Registration).Error("error: no such registration")
 		sess.Peer.Send(&Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -111,7 +111,7 @@ func (d *defaultDealer) Unregister(sess *Session, msg *Unregister) {
 		delete(d.procedures, procedure)
 		// d.removeCalleeRegistration(sess, msg.Registration)
 		log.WithFields(logrus.Fields{
-			"procedure": procedure,
+			"procedure":       procedure,
 			"registration_id": msg.Registration,
 		}).Error("unregistered procedure")
 		sess.Peer.Send(&Unregistered{
@@ -133,8 +133,7 @@ func (d *defaultDealer) Call(sess *Session, msg *Call) {
 			Request: msg.Request,
 			Details: make(map[string]interface{}),
 			Error:   ErrNoSuchProcedure,
-		}
-		caller.Send(e)
+		})
 		log.WithFields(logrus.Fields{
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
@@ -161,7 +160,7 @@ func (d *defaultDealer) Call(sess *Session, msg *Call) {
 			"procedure":     msg.Procedure,
 			"invocation_id": invocationID,
 		}).Info("dispatched")
-		}
+	}
 }
 
 func (d *defaultDealer) Yield(sess *Session, msg *Yield) {
@@ -172,8 +171,8 @@ func (d *defaultDealer) Yield(sess *Session, msg *Yield) {
 	defer d.invocationLock.Unlock()
 
 	if d.invocations[sess] == nil {
-		log.WithField("session_id": sess.Id).Error("received YIELD message from unknown session")
-			return
+		log.WithField("session_id", sess.Id).Error("received YIELD message from unknown session")
+		return
 	}
 	if call, ok := d.invocations[sess][msg.Request]; !ok {
 		// WAMP spec doesn't allow sending an error in response to a YIELD message
@@ -190,7 +189,7 @@ func (d *defaultDealer) Yield(sess *Session, msg *Yield) {
 			ArgumentsKw: msg.ArgumentsKw,
 		})
 		log.WithFields(logrus.Fields{
-			"yield": msg.Request,
+			"yield":      msg.Request,
 			"request_id": call.requestId,
 		}).Info("returned YIELD to caller")
 	}
@@ -226,7 +225,7 @@ func (d *defaultDealer) Error(sess *Session, msg *Error) {
 			ArgumentsKw: msg.ArgumentsKw,
 		})
 		log.WithFields(logrus.Fields{
-			"error": msg.Request,
+			"error":      msg.Request,
 			"request_id": call.requestId,
 		}).Info("returned ERROR to caller")
 	}
