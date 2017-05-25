@@ -74,6 +74,7 @@ func (d *defaultDealer) Register(sess *Session, msg *Register) {
 		}
 		sess.Peer.Send(e)
 		log.WithFields(logrus.Fields{
+			"id":           id,
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
 			"error":        e,
