@@ -42,8 +42,8 @@ type Router interface {
 	Close() error
 	RegisterRealm(URI, Realm) error
 	GetLocalPeer(URI, map[string]interface{}) (Peer, error)
-	AddSessionOpenCallback(func(*Session, string))
-	AddSessionCloseCallback(func(*Session, string))
+	AddSessionOpenCallback(func(uint, string))
+	AddSessionCloseCallback(func(uint, string))
 }
 
 // DefaultRouter is the default WAMP router implementation.
@@ -51,8 +51,8 @@ type defaultRouter struct {
 	realms                cmap.ConcurrentMap
 	closing               bool
 	closeLock             sync.Mutex
-	sessionOpenCallbacks  []func(*Session, string)
-	sessionCloseCallbacks []func(*Session, string)
+	sessionOpenCallbacks  []func(uint, string)
+	sessionCloseCallbacks []func(uint, string)
 }
 
 // NewDefaultRouter creates a very basic WAMP router.
@@ -64,11 +64,11 @@ func NewDefaultRouter() Router {
 	}
 }
 
-func (r *defaultRouter) AddSessionOpenCallback(fn func(*Session, string)) {
+func (r *defaultRouter) AddSessionOpenCallback(fn func(uint, string)) {
 	r.sessionOpenCallbacks = append(r.sessionOpenCallbacks, fn)
 }
 
-func (r *defaultRouter) AddSessionCloseCallback(fn func(*Session, string)) {
+func (r *defaultRouter) AddSessionCloseCallback(fn func(uint, string)) {
 	r.sessionCloseCallbacks = append(r.sessionCloseCallbacks, fn)
 }
 
@@ -197,13 +197,13 @@ func (r *defaultRouter) Accept(client Peer) error {
 		kill:    make(chan URI, 1),
 	}
 	for _, callback := range r.sessionOpenCallbacks {
-		go callback(sess, string(hello.Realm))
+		go callback(uint(sess.Id), string(hello.Realm))
 	}
 	go func() {
 		realm.handleSession(sess)
 		sess.Close()
 		for _, callback := range r.sessionCloseCallbacks {
-			go callback(sess, string(hello.Realm))
+			go callback(uint(sess.Id), string(hello.Realm))
 		}
 	}()
 	return nil
