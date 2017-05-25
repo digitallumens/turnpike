@@ -140,13 +140,13 @@ func (r *Realm) doOne(c <-chan Message, sess *Session) bool {
 		return false
 	}
 
-redactedMsg := redactMessage(msg)
+	redactedMsg := redactMessage(msg)
 
-log.WithFields(logrus.Fields{
-	"session_id":   sess.Id,
-	"message_type": msg.MessageType().String(),
-	"message":      redactedMsg,
-}).Info("new message")
+	log.WithFields(logrus.Fields{
+		"session_id":   sess.Id,
+		"message_type": msg.MessageType().String(),
+		"message":      redactedMsg,
+	}).Info("new message")
 
 	if isAuthz, err := r.Authorizer.Authorize(sess, msg); !isAuthz {
 		errMsg := &Error{Type: msg.MessageType()}
@@ -156,7 +156,7 @@ log.WithFields(logrus.Fields{
 				"session_id":   sess.Id,
 				"message_type": msg.MessageType().String(),
 				"message":      redactedMsg,
-				"error": err,
+				"error":        err,
 			}).Info("authorization failed")
 		} else {
 			errMsg.Error = ErrNotAuthorized
@@ -164,7 +164,7 @@ log.WithFields(logrus.Fields{
 				"session_id":   sess.Id,
 				"message_type": msg.MessageType().String(),
 				"message":      redactedMsg,
-				"error": err,
+				"error":        err,
 			}).Info("UNAUTHORIZED")
 		}
 		logErr(sess.Send(errMsg))
@@ -178,8 +178,8 @@ log.WithFields(logrus.Fields{
 		logErr(sess.Send(&Goodbye{Reason: ErrGoodbyeAndOut, Details: make(map[string]interface{})}))
 		log.WithFields(logrus.Fields{
 			"session_id": sess.Id,
-			"reason": msg.Reason,
-			}).Warning("leaving")
+			"reason":     msg.Reason,
+		}).Warning("leaving")
 		return false
 
 	// Broker messages
@@ -233,6 +233,8 @@ func redactMessage(msg Message) Message {
 			redacted.Options[k] = v
 		}
 		return &redacted
+	}
+	return msg
 }
 
 func (r *Realm) handleSession(sess *Session) {
