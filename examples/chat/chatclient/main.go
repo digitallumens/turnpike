@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"gopkg.in/jcelliott/turnpike.v2"
+	"gopkg.in/beatgammit/turnpike.v2"
 )
 
 const (
@@ -36,7 +36,7 @@ func main() {
 	username := os.Args[1]
 
 	// turnpike.Debug()
-	c, err := turnpike.NewWebsocketClient(turnpike.JSON, "ws://localhost:8000/", nil, nil)
+	c, err := turnpike.NewWebsocketClient(turnpike.JSON, "ws://localhost:8000/", nil)
 	if err != nil {
 		log.Fatal(err)
 	}

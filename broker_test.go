@@ -1,6 +1,7 @@
 package turnpike
 
 import (
+	"sync"
 	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
@@ -8,9 +9,27 @@ import (
 
 type TestPeer struct {
 	received Message
+	sent     Message
+
+	sync.RWMutex
 }
 
-func (s *TestPeer) Send(msg Message) error  { s.received = msg; return nil }
+func (s *TestPeer) Send(msg Message) error {
+	s.Lock()
+	defer s.Unlock()
+
+	s.received = msg
+	return nil
+}
+
+func (s *TestPeer) getReceived() Message {
+	s.RLock()
+	defer s.RUnlock()
+
+	return s.received
+}
+
+// TODO: implement me
 func (s *TestPeer) Receive() <-chan Message { return nil }
 func (s *TestPeer) Close() error            { return nil }
 
@@ -38,8 +57,43 @@ func TestSubscribe(t *testing.T) {
 			_, ok = broker.sessions[sess]
 			So(ok, ShouldBeTrue)
 		})
+	})
+}
 
-		// TODO: multiple subscribe requests?
+func TestBrokerNextRequestId(t *testing.T) {
+	Convey("nextRequestId called multiple times", t, func() {
+		broker := NewDefaultBroker().(*defaultBroker)
+		id1 := broker.nextRequestId()
+		id2 := broker.nextRequestId()
+
+		So(id1, ShouldNotEqual, id2)
+	})
+
+	Convey("nextRequestId should roll over", t, func() {
+		broker := NewDefaultBroker().(*defaultBroker)
+		broker.lastRequestId = MAX_REQUEST_ID
+		id := broker.nextRequestId()
+
+		So(id, ShouldEqual, 1)
+	})
+}
+
+func TestMultipleSubscribe(t *testing.T) {
+	const SUBSCRIBERS = 2
+	const TOPIC = URI("turnpike.test.topic")
+
+	Convey("Multiple subscribers to a topic", t, func() {
+		broker := NewDefaultBroker().(*defaultBroker)
+		for i := 0; i < SUBSCRIBERS; i++ {
+			subscriber := &TestPeer{}
+			sess := &Session{Peer: subscriber, Id: NewID()}
+			msg := &Subscribe{Request: sess.NextRequestId(), Topic: TOPIC}
+			broker.Subscribe(sess, msg)
+		}
+
+		Convey("There should be a map entry for each subscriber", func() {
+			So(len(broker.routes[TOPIC]), ShouldEqual, SUBSCRIBERS)
+		})
 	})
 }
 

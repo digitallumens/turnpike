@@ -23,236 +23,244 @@ type Dealer interface {
 }
 
 type remoteProcedure struct {
-	Endpoint  *Session
-	Procedure URI
+	Endpoint     *Session
+	Procedure    URI
+	Registration ID
+}
+
+type rpcRequest struct {
+	caller    *Session
+	requestId ID
 }
 
 type defaultDealer struct {
 	// map registration IDs to procedures
-	procedures map[ID]remoteProcedure
+	procedures map[URI]remoteProcedure
 	// map procedure URIs to registration IDs
 	// TODO: this will eventually need to be `map[URI][]ID` to support
 	// multiple callees for the same procedure
-	registrations map[URI]ID
-	// keep track of call IDs so we can send the response to the caller
-	calls map[ID]*Session
+	registrations map[ID]URI
+
 	// link the invocation ID to the call ID
-	invocations map[ID]ID
-	// keep track of callee's registrations
-	callees map[*Session]map[ID]bool
-	// protect maps from concurrent access
-	lock sync.Mutex
+	invocations map[*Session]map[ID]rpcRequest
+	// callees map[*Session]map[ID]bool
+
+	// single lock for all invocations; could use RWLock, but in most (all?) cases we want a write lock
+	// TODO: add the lock per session
+	invocationLock sync.Mutex
+
+	sync.RWMutex
 }
 
 // NewDefaultDealer returns the default turnpike dealer implementation
 func NewDefaultDealer() Dealer {
 	return &defaultDealer{
-		procedures:    make(map[ID]remoteProcedure),
-		registrations: make(map[URI]ID),
-		calls:         make(map[ID]*Session),
-		invocations:   make(map[ID]ID),
-		callees:       make(map[*Session]map[ID]bool),
+		procedures:    make(map[URI]remoteProcedure),
+		registrations: make(map[ID]URI),
+		invocations:   make(map[*Session]map[ID]rpcRequest),
 	}
 }
 
-func (d *defaultDealer) Register(callee *Session, msg *Register) {
-	reg := NewID()
-	d.lock.Lock()
-	if _, ok := d.registrations[msg.Procedure]; ok {
-		d.lock.Unlock()
+func (d *defaultDealer) Register(sess *Session, msg *Register) {
+	d.Lock()
+	defer d.Unlock()
+
+	if id, ok := d.procedures[msg.Procedure]; ok {
 		e := &Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: make(map[string]interface{}),
 			Error:   ErrProcedureAlreadyExists,
 		}
-		callee.Send(e)
+		sess.Peer.Send(e)
 		log.WithFields(logrus.Fields{
+			"session_id":   sess.Id,
+			"id":           id,
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
 			"error":        e,
-		}).Info("procedure already exists")
+		}).Error("REGISTER: procedure already exists")
 
 		return
 	}
-	d.procedures[reg] = remoteProcedure{callee, msg.Procedure}
-	d.registrations[msg.Procedure] = reg
-	d.addCalleeRegistration(callee, reg)
-	d.lock.Unlock()
 
-	log.Infof("registered procedure %v [%v]", reg, msg.Procedure)
-	callee.Send(&Registered{
+	registrationId := NewID()
+	d.procedures[msg.Procedure] = remoteProcedure{sess, msg.Procedure, registrationId}
+	d.registrations[registrationId] = msg.Procedure
+
+	// d.addCalleeRegistration(sess, reg)
+	log.WithFields(logrus.Fields{
+		"session_id":      sess.Id,
+		"registration_id": registrationId,
+		"procedure":       msg.Procedure,
+	}).Info("REGISTER")
+	sess.Peer.Send(&Registered{
 		Request:      msg.Request,
-		Registration: reg,
+		Registration: registrationId,
 	})
 }
 
-func (d *defaultDealer) Unregister(callee *Session, msg *Unregister) {
-	d.lock.Lock()
-	if procedure, ok := d.procedures[msg.Registration]; !ok {
-		d.lock.Unlock()
+func (d *defaultDealer) Unregister(sess *Session, msg *Unregister) {
+	d.Lock()
+	defer d.Unlock()
+
+	if procedure, ok := d.registrations[msg.Registration]; !ok {
 		// the registration doesn't exist
-		log.Errorf("error: no such registration:", msg.Registration)
-		callee.Send(&Error{
+		log.WithFields(logrus.Fields{
+			"session_id":      sess.Id,
+			"registration_id": msg.Registration,
+		}).Error("error: no such registration")
+		sess.Peer.Send(&Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: make(map[string]interface{}),
 			Error:   ErrNoSuchRegistration,
 		})
 	} else {
-		delete(d.registrations, procedure.Procedure)
-		delete(d.procedures, msg.Registration)
-		d.removeCalleeRegistration(callee, msg.Registration)
-		d.lock.Unlock()
-		log.Infof("unregistered procedure %v [%v]", procedure.Procedure, msg.Registration)
-		callee.Send(&Unregistered{
+		delete(d.registrations, msg.Registration)
+		delete(d.procedures, procedure)
+		// d.removeCalleeRegistration(sess, msg.Registration)
+		log.WithFields(logrus.Fields{
+			"session_id":      sess.Id,
+			"procedure":       procedure,
+			"registration_id": msg.Registration,
+		}).Error("UNREGISTER")
+		sess.Peer.Send(&Unregistered{
 			Request: msg.Request,
 		})
 	}
 }
 
-func (d *defaultDealer) Call(caller *Session, msg *Call) {
-	d.lock.Lock()
-	if reg, ok := d.registrations[msg.Procedure]; !ok {
-		d.lock.Unlock()
+func (d *defaultDealer) Call(sess *Session, msg *Call) {
+	d.Lock()
+	defer d.Unlock()
+
+	d.invocationLock.Lock()
+	defer d.invocationLock.Unlock()
+
+	if rproc, ok := d.procedures[msg.Procedure]; !ok {
 		e := &Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
 			Details: make(map[string]interface{}),
 			Error:   ErrNoSuchProcedure,
 		}
-		caller.Send(e)
+		sess.Peer.Send(e)
 		log.WithFields(logrus.Fields{
+			"session_id":   sess.Id,
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
 			"error":        e,
-		}).Info("no such procedure")
+		}).Error("CALL: no such procedure")
 	} else {
-		if rproc, ok := d.procedures[reg]; !ok {
-			// found a registration id, but doesn't match any remote procedure
-			d.lock.Unlock()
-			caller.Send(&Error{
-				Type:    msg.MessageType(),
-				Request: msg.Request,
-				Details: make(map[string]interface{}),
-				// TODO: what should this error be?
-				Error: URI("wamp.error.internal_error"),
-			})
-		} else {
-			// everything checks out, make the invocation request
-			d.calls[msg.Request] = caller
-			invocationID := NewID()
-			d.invocations[invocationID] = msg.Request
-			d.lock.Unlock()
-			details := map[string]interface{}{}
-
-			// Options{"disclose_me": true} -> Details{"caller": 3335656}
-			if val, ok := msg.Options["disclose_me"]; ok {
-				if disclose, ok := val.(bool); ok && (disclose == true) {
-					details["caller"] = caller.Id
-				}
-			}
-
-			// TODO deal with Details{"trustlevel": 2}
-			rproc.Endpoint.Send(&Invocation{
-				Request:      invocationID,
-				Registration: reg,
-				Details:      details,
-				Arguments:    msg.Arguments,
-				ArgumentsKw:  msg.ArgumentsKw,
-			})
-			log.WithFields(logrus.Fields{
-				"request_id":    msg.Request,
-				"procedure":     msg.Procedure,
-				"invocation_id": invocationID,
-			}).Info("dispatched")
+		// everything checks out, make the invocation request
+		// TODO: make the Request ID specific to the caller
+		// d.calls[msg.Request] = sess
+		invocationID := rproc.Endpoint.NextRequestId()
+		if d.invocations[rproc.Endpoint] == nil {
+			d.invocations[rproc.Endpoint] = make(map[ID]rpcRequest)
 		}
+		d.invocations[rproc.Endpoint][invocationID] = rpcRequest{sess, msg.Request}
+		rproc.Endpoint.Send(&Invocation{
+			Request:      invocationID,
+			Registration: rproc.Registration,
+			Details:      map[string]interface{}{},
+			Arguments:    msg.Arguments,
+			ArgumentsKw:  msg.ArgumentsKw,
+		})
+		log.WithFields(logrus.Fields{
+			"session_id":    sess.Id,
+			"endpoint_id":   rproc.Endpoint.Id,
+			"request_id":    msg.Request,
+			"procedure":     msg.Procedure,
+			"invocation_id": invocationID,
+		}).Debug("CALL: dispatched")
 	}
 }
 
-func (d *defaultDealer) Yield(callee *Session, msg *Yield) {
-	d.lock.Lock()
-	if callID, ok := d.invocations[msg.Request]; !ok {
-		d.lock.Unlock()
-		// WAMP spec doesn't allow sending an error in response to a YIELD message
-		log.Errorf("received YIELD message with invalid invocation request ID: %d", msg.Request)
-	} else {
-		delete(d.invocations, msg.Request)
-		if caller, ok := d.calls[callID]; !ok {
-			// found the invocation id, but doesn't match any call id
-			// WAMP spec doesn't allow sending an error in response to a YIELD message
-			d.lock.Unlock()
-			log.Infof("received YIELD message, but unable to match it (%v) to a CALL ID", msg.Request)
-		} else {
-			delete(d.calls, callID)
-			d.lock.Unlock()
-			// return the result to the caller
-			err := caller.Send(&Result{
-				Request:     callID,
-				Details:     map[string]interface{}{},
-				Arguments:   msg.Arguments,
-				ArgumentsKw: msg.ArgumentsKw,
-			})
-			if err != nil {
-				log.Errorf("caller.Send returned an error: %s", err.Error())
-			}
-			log.Infof("returned YIELD %v to caller as RESULT %v", msg.Request, callID)
-		}
-	}
-}
+func (d *defaultDealer) Yield(sess *Session, msg *Yield) {
+	d.Lock()
+	defer d.Unlock()
 
-func (d *defaultDealer) Error(peer *Session, msg *Error) {
-	d.lock.Lock()
-	if callID, ok := d.invocations[msg.Request]; !ok {
-		d.lock.Unlock()
-		log.Infof("received ERROR (INVOCATION) message with invalid invocation request ID:", msg.Request)
-	} else {
-		delete(d.invocations, msg.Request)
-		if caller, ok := d.calls[callID]; !ok {
-			d.lock.Unlock()
-			log.Infof("received ERROR (INVOCATION) message, but unable to match it (%v) to a CALL ID", msg.Request)
-		} else {
-			delete(d.calls, callID)
-			d.lock.Unlock()
-			// return an error to the caller
-			caller.Send(&Error{
-				Type:        CALL,
-				Request:     callID,
-				Error:       msg.Error,
-				Details:     make(map[string]interface{}),
-				Arguments:   msg.Arguments,
-				ArgumentsKw: msg.ArgumentsKw,
-			})
-			log.Infof("returned ERROR %v to caller as ERROR %v", msg.Request, callID)
-		}
-	}
-}
+	d.invocationLock.Lock()
+	defer d.invocationLock.Unlock()
 
-func (d *defaultDealer) RemoveSession(callee *Session) {
-	d.lock.Lock()
-	defer d.lock.Unlock()
-	for reg := range d.callees[callee] {
-		if procedure, ok := d.procedures[reg]; ok {
-			delete(d.registrations, procedure.Procedure)
-			delete(d.procedures, reg)
-		}
-		d.removeCalleeRegistration(callee, reg)
-	}
-}
-
-func (d *defaultDealer) addCalleeRegistration(callee *Session, reg ID) {
-	if _, ok := d.callees[callee]; !ok {
-		d.callees[callee] = make(map[ID]bool)
-	}
-	d.callees[callee][reg] = true
-}
-
-func (d *defaultDealer) removeCalleeRegistration(callee *Session, reg ID) {
-	if _, ok := d.callees[callee]; !ok {
+	if d.invocations[sess] == nil {
+		log.WithField("session_id", sess.Id).Error("YIELD: unknown session")
 		return
 	}
-	delete(d.callees[callee], reg)
-	if len(d.callees[callee]) == 0 {
-		delete(d.callees, callee)
+	if call, ok := d.invocations[sess][msg.Request]; !ok {
+		// WAMP spec doesn't allow sending an error in response to a YIELD message
+		log.WithField("request_id", msg.Request).Error("YIELD: invalid invocation request ID")
+	} else {
+		// delete old keys
+		delete(d.invocations[sess], msg.Request)
+
+		// return the result to the caller
+		go call.caller.Send(&Result{
+			Request:     call.requestId,
+			Details:     map[string]interface{}{},
+			Arguments:   msg.Arguments,
+			ArgumentsKw: msg.ArgumentsKw,
+		})
+		log.WithFields(logrus.Fields{
+			"yield":      msg.Request,
+			"request_id": call.requestId,
+		}).Debug("YIELD: returned to caller")
+	}
+
+	if len(d.invocations[sess]) == 0 {
+		delete(d.invocations, sess)
+	}
+}
+
+func (d *defaultDealer) Error(sess *Session, msg *Error) {
+	d.invocationLock.Lock()
+	defer d.invocationLock.Unlock()
+
+	if d.invocations[sess] == nil {
+		log.WithField("session_id", sess.Id).Error("ERROR: unknown session")
+		return
+	}
+	if call, ok := d.invocations[sess][msg.Request]; !ok {
+		log.WithFields(logrus.Fields{
+			"session_id": sess.Id,
+			"request_id": msg.Request,
+		}).Error("ERROR: invalid invocation request ID")
+	} else {
+		delete(d.invocations[sess], msg.Request)
+
+		// return an error to the caller
+		go call.caller.Peer.Send(&Error{
+			Type:        CALL,
+			Request:     call.requestId,
+			Error:       msg.Error,
+			Details:     make(map[string]interface{}),
+			Arguments:   msg.Arguments,
+			ArgumentsKw: msg.ArgumentsKw,
+		})
+		log.WithFields(logrus.Fields{
+			"error":      msg.Request,
+			"request_id": call.requestId,
+		}).Error("ERROR: returned to caller")
+	}
+
+	if len(d.invocations[sess]) == 0 {
+		delete(d.invocations, sess)
+	}
+}
+
+func (d *defaultDealer) RemoveSession(sess *Session) {
+	d.Lock()
+	defer d.Unlock()
+
+	log.WithField("session_id", sess.Id).Info("RemoveSession")
+
+	// TODO: this is low hanging fruit for optimization
+	for _, rproc := range d.procedures {
+		if rproc.Endpoint == sess {
+			delete(d.registrations, rproc.Registration)
+			delete(d.procedures, rproc.Procedure)
+		}
 	}
 }

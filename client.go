@@ -3,6 +3,7 @@ package turnpike
 import (
 	"crypto/tls"
 	"fmt"
+	"sync"
 	"time"
 
 	logrus "github.com/sirupsen/logrus"
@@ -41,6 +42,8 @@ type Client struct {
 	procedures   map[ID]*procedureDesc
 	acts         chan func()
 	requestCount uint
+
+	lock sync.RWMutex
 }
 
 type procedureDesc struct {
@@ -243,7 +246,13 @@ func (c *Client) Receive() {
 		switch msg := msg.(type) {
 
 		case *Event:
-			c.handleEvent(msg)
+			c.lock.RLock()
+			if event, ok := c.events[msg.Subscription]; ok {
+				go event.handler(msg.Arguments, msg.ArgumentsKw)
+			} else {
+				log.WithFields(logrus.Fields{"subscription_id": msg.Subscription}).Error("no handler registered for subscription")
+			}
+			c.lock.RUnlock()
 
 		case *Invocation:
 			c.handleInvocation(msg)
@@ -298,17 +307,9 @@ func (c *Client) handleEvent(msg *Event) {
 
 func (c *Client) notifyListener(msg Message, requestID ID) {
 	// pass in the request ID so we don't have to do any type assertion
-	var (
-		sync = make(chan struct{})
-		l    chan Message
-		ok   bool
-	)
-	c.acts <- func() {
-		l, ok = c.listeners[requestID]
-		sync <- struct{}{}
-	}
-	<-sync
-	if ok {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	if l, ok := c.listeners[requestID]; ok {
 		l <- msg
 	} else {
 		log.WithFields(logrus.Fields{
@@ -319,74 +320,70 @@ func (c *Client) notifyListener(msg Message, requestID ID) {
 }
 
 func (c *Client) handleInvocation(msg *Invocation) {
-	sync := make(chan struct{})
-	c.acts <- func() {
-		if proc, ok := c.procedures[msg.Registration]; ok {
-			go func() {
-				result := proc.handler(msg.Arguments, msg.ArgumentsKw, msg.Details)
+	c.lock.RLock()
+	if proc, ok := c.procedures[msg.Registration]; ok {
+		c.lock.RUnlock()
+		go func() {
+			result := proc.handler(msg.Arguments, msg.ArgumentsKw, msg.Details)
 
-				var tosend Message
-				tosend = &Yield{
+			var tosend Message
+			tosend = &Yield{
+				Request:     msg.Request,
+				Options:     make(map[string]interface{}),
+				Arguments:   result.Args,
+				ArgumentsKw: result.Kwargs,
+			}
+
+			if result.Err != "" {
+				tosend = &Error{
+					Type:        INVOCATION,
 					Request:     msg.Request,
-					Options:     make(map[string]interface{}),
+					Details:     make(map[string]interface{}),
 					Arguments:   result.Args,
 					ArgumentsKw: result.Kwargs,
+					Error:       result.Err,
 				}
-
-				if result.Err != "" {
-					tosend = &Error{
-						Type:        INVOCATION,
-						Request:     msg.Request,
-						Details:     make(map[string]interface{}),
-						Arguments:   result.Args,
-						ArgumentsKw: result.Kwargs,
-						Error:       result.Err,
-					}
-				}
-
-				if err := c.Send(tosend); err != nil {
-					log.Infof("error sending message: %s", err)
-				}
-			}()
-		} else {
-			log.Infof("no handler registered for registration: %+v", msg.Registration)
-			if err := c.Send(&Error{
-				Type:    INVOCATION,
-				Request: msg.Request,
-				Details: make(map[string]interface{}),
-				Error:   URI(fmt.Sprintf("no handler for registration: %v", msg.Registration)),
-			}); err != nil {
-				log.Infof("error sending message: %s", err)
 			}
+
+			if err := c.Send(tosend); err != nil {
+				log.WithField("error", err).Info("error sending message")
+			}
+		}()
+	} else {
+		c.lock.RUnlock()
+		log.WithField("registration_id", msg.Registration).Error("no handler registered")
+		if err := c.Send(&Error{
+			Type:    INVOCATION,
+			Request: msg.Request,
+			Details: make(map[string]interface{}),
+			Error:   URI(fmt.Sprintf("no handler for registration: %v", msg.Registration)),
+		}); err != nil {
+			log.WithField("error", err).Error("Send returned an error")
 		}
-		sync <- struct{}{}
 	}
-	<-sync
 }
 
 func (c *Client) registerListener(id ID) {
 	log.WithField("listener_id", id).Info("register listener")
 	wait := make(chan Message, 1)
-	sync := make(chan struct{})
-	c.acts <- func() {
-		c.listeners[id] = wait
-		sync <- struct{}{}
-	}
-	<-sync
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.listeners[id] = wait
+}
+
+func (c *Client) unregisterListener(id ID) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	log.Println("unregister listener:", id)
+	delete(c.listeners, id)
 }
 
 func (c *Client) waitOnListener(id ID) (msg Message, err error) {
 	log.WithField("listener_id", id).Info("wait on listener")
-	var (
-		sync = make(chan struct{})
-		wait chan Message
-		ok   bool
-	)
-	c.acts <- func() {
-		wait, ok = c.listeners[id]
-		sync <- struct{}{}
-	}
-	<-sync
+	c.lock.RLock()
+	wait, ok := c.listeners[id]
+	c.lock.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("unknown listener ID: %v", id)
 	}
@@ -411,6 +408,9 @@ func (c *Client) Subscribe(topic string, options map[string]interface{}, fn Even
 	}
 	id := NewID()
 	c.registerListener(id)
+	// TODO: figure out where to clean this up
+	// defer c.unregisterListener(id)
+
 	sub := &Subscribe{
 		Request: id,
 		Options: options,
@@ -430,12 +430,9 @@ func (c *Client) Subscribe(topic string, options map[string]interface{}, fn Even
 		return fmt.Errorf(formatUnexpectedMessage(msg, SUBSCRIBED))
 	} else {
 		// register the event handler with this subscription
-		sync := make(chan struct{})
-		c.acts <- func() {
-			c.events[subscribed.Subscription] = &eventDesc{topic, fn}
-			sync <- struct{}{}
-		}
-		<-sync
+		c.lock.Lock()
+		defer c.lock.Unlock()
+		c.events[subscribed.Subscription] = &eventDesc{topic, fn}
 	}
 	return nil
 }
@@ -449,23 +446,23 @@ func (c *Client) Unsubscribe(topic string) error {
 		msg            Message
 		err            error
 	)
-	c.acts <- func() {
-		for id, desc := range c.events {
-			if desc.topic == topic {
-				subscriptionID = id
-				found = true
-				break
-			}
+	c.lock.RLock()
+	for id, desc := range c.events {
+		if desc.topic == topic {
+			subscriptionID = id
+			found = true
 		}
 		sync <- struct{}{}
 	}
-	<-sync
+	c.lock.RUnlock()
 	if !found {
 		return fmt.Errorf("Event %s is not registered with this client.", topic)
 	}
 
 	id := NewID()
 	c.registerListener(id)
+	defer c.unregisterListener(id)
+
 	sub := &Unsubscribe{
 		Request:      id,
 		Subscription: subscriptionID,
@@ -482,11 +479,10 @@ func (c *Client) Unsubscribe(topic string) error {
 	} else if _, ok := msg.(*Unsubscribed); !ok {
 		return fmt.Errorf(formatUnexpectedMessage(msg, UNSUBSCRIBED))
 	}
-	c.acts <- func() {
-		delete(c.events, subscriptionID)
-		sync <- struct{}{}
-	}
-	<-sync
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	delete(c.events, subscriptionID)
 	return nil
 }
 
@@ -499,6 +495,9 @@ type MethodHandler func(
 func (c *Client) Register(procedure string, fn MethodHandler, options map[string]interface{}) error {
 	id := NewID()
 	c.registerListener(id)
+	// TODO: figure out where to clean this up
+	// defer c.unregisterListener(id)
+
 	register := &Register{
 		Request:   id,
 		Options:   options,
@@ -519,12 +518,9 @@ func (c *Client) Register(procedure string, fn MethodHandler, options map[string
 		return fmt.Errorf(formatUnexpectedMessage(msg, REGISTERED))
 	} else {
 		// register the event handler with this registration
-		sync := make(chan struct{})
-		c.acts <- func() {
-			c.procedures[registered.Registration] = &procedureDesc{procedure, fn}
-			sync <- struct{}{}
-		}
-		<-sync
+		c.lock.Lock()
+		defer c.lock.Unlock()
+		c.procedures[registered.Registration] = &procedureDesc{procedure, fn}
 	}
 	return nil
 }
@@ -550,22 +546,22 @@ func (c *Client) Unregister(procedure string) error {
 		msg         Message
 		err         error
 	)
-	c.acts <- func() {
-		for id, p := range c.procedures {
-			if p.name == procedure {
-				procedureID = id
-				found = true
-				break
-			}
+	c.lock.RLock()
+	for id, p := range c.procedures {
+		if p.name == procedure {
+			procedureID = id
+			found = true
 		}
 		sync <- struct{}{}
 	}
-	<-sync
+	c.lock.RUnlock()
 	if !found {
 		return fmt.Errorf("Procedure %s is not registered with this client.", procedure)
 	}
 	id := NewID()
 	c.registerListener(id)
+	defer c.unregisterListener(id)
+
 	unregister := &Unregister{
 		Request:      id,
 		Registration: procedureID,
@@ -583,11 +579,9 @@ func (c *Client) Unregister(procedure string) error {
 		return fmt.Errorf(formatUnexpectedMessage(msg, UNREGISTERED))
 	}
 	// register the event handler with this unregistration
-	c.acts <- func() {
-		delete(c.procedures, procedureID)
-		sync <- struct{}{}
-	}
-	<-sync
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	delete(c.procedures, procedureID)
 	return nil
 }
 
@@ -618,6 +612,7 @@ func (rpc RPCError) Error() string {
 func (c *Client) Call(procedure string, options map[string]interface{}, args []interface{}, kwargs map[string]interface{}) (*Result, error) {
 	id := NewID()
 	c.registerListener(id)
+	defer c.unregisterListener(id)
 
 	call := &Call{
 		Request:     id,
