@@ -66,6 +66,11 @@ func (br *defaultBroker) Publish(sess *Session, msg *Publish) {
 		Details:     make(map[string]interface{}),
 	}
 
+	log.WithFields(logrus.Fields{
+		"session_id": sess.Id,
+		"topic":      msg.Topic,
+	}).Debug("PUBLISH")
+
 	excludePublisher := true
 	if exclude, ok := msg.Options["exclude_me"].(bool); ok {
 		excludePublisher = exclude
@@ -104,6 +109,12 @@ func (br *defaultBroker) Subscribe(sess *Session, msg *Subscribe) {
 	br.routes[msg.Topic][id] = sess.Peer
 	br.subscriptions[id] = msg.Topic
 
+	log.WithFields(logrus.Fields{
+		"session_id":      sess.Id,
+		"subscription_id": id,
+		"topic":           msg.Topic,
+	}).Info("SUBSCRIBE")
+
 	// subscribers
 	ids, ok := br.subscribers[sess]
 	if !ok {
@@ -118,6 +129,11 @@ func (br *defaultBroker) Subscribe(sess *Session, msg *Subscribe) {
 func (br *defaultBroker) Unsubscribe(sess *Session, msg *Unsubscribe) {
 	br.Lock()
 	defer br.Unlock()
+
+	log.WithFields(logrus.Fields{
+		"session_id":      sess.Id,
+		"subscription_id": msg.Subscription,
+	}).Info("UNSUBSCRIBE")
 
 	if !br.unsubscribe(sess, msg.Subscription) {
 		err := &Error{
@@ -137,7 +153,11 @@ func (br *defaultBroker) Unsubscribe(sess *Session, msg *Unsubscribe) {
 }
 
 func (br *defaultBroker) unsubscribe(sess *Session, id ID) bool {
-	log.Printf("broker unsubscribing: %p, %d", &sess, id)
+	log.WithFields(logrus.Fields{
+		"session_id":      sess.Id,
+		"subscription_id": id,
+	}).Debug("unsubscribe")
+
 	topic, ok := br.subscriptions[id]
 	if !ok {
 		return false
@@ -175,7 +195,7 @@ func (br *defaultBroker) unsubscribe(sess *Session, id ID) bool {
 }
 
 func (br *defaultBroker) RemoveSession(sess *Session) {
-	log.WithField("session_id", sess.Id).Info("broker remove peer")
+	log.WithField("session_id", sess.Id).Info("RemoveSession")
 	br.Lock()
 	defer br.Unlock()
 

@@ -74,11 +74,12 @@ func (d *defaultDealer) Register(sess *Session, msg *Register) {
 		}
 		sess.Peer.Send(e)
 		log.WithFields(logrus.Fields{
+			"session_id":   sess.Id,
 			"id":           id,
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
 			"error":        e,
-		}).Info("procedure already exists")
+		}).Error("REGISTER: procedure already exists")
 
 		return
 	}
@@ -89,9 +90,10 @@ func (d *defaultDealer) Register(sess *Session, msg *Register) {
 
 	// d.addCalleeRegistration(sess, reg)
 	log.WithFields(logrus.Fields{
+		"session_id":      sess.Id,
 		"registration_id": registrationId,
 		"procedure":       msg.Procedure,
-	}).Info("registered procedure")
+	}).Info("REGISTER")
 	sess.Peer.Send(&Registered{
 		Request:      msg.Request,
 		Registration: registrationId,
@@ -104,7 +106,10 @@ func (d *defaultDealer) Unregister(sess *Session, msg *Unregister) {
 
 	if procedure, ok := d.registrations[msg.Registration]; !ok {
 		// the registration doesn't exist
-		log.WithField("registration_id", msg.Registration).Error("error: no such registration")
+		log.WithFields(logrus.Fields{
+			"session_id":      sess.Id,
+			"registration_id": msg.Registration,
+		}).Error("error: no such registration")
 		sess.Peer.Send(&Error{
 			Type:    msg.MessageType(),
 			Request: msg.Request,
@@ -116,9 +121,10 @@ func (d *defaultDealer) Unregister(sess *Session, msg *Unregister) {
 		delete(d.procedures, procedure)
 		// d.removeCalleeRegistration(sess, msg.Registration)
 		log.WithFields(logrus.Fields{
+			"session_id":      sess.Id,
 			"procedure":       procedure,
 			"registration_id": msg.Registration,
-		}).Error("unregistered procedure")
+		}).Error("UNREGISTER")
 		sess.Peer.Send(&Unregistered{
 			Request: msg.Request,
 		})
@@ -141,10 +147,11 @@ func (d *defaultDealer) Call(sess *Session, msg *Call) {
 		}
 		sess.Peer.Send(e)
 		log.WithFields(logrus.Fields{
+			"session_id":   sess.Id,
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
 			"error":        e,
-		}).Info("no such procedure")
+		}).Error("CALL: no such procedure")
 	} else {
 		// everything checks out, make the invocation request
 		// TODO: make the Request ID specific to the caller
@@ -162,10 +169,12 @@ func (d *defaultDealer) Call(sess *Session, msg *Call) {
 			ArgumentsKw:  msg.ArgumentsKw,
 		})
 		log.WithFields(logrus.Fields{
+			"session_id":    sess.Id,
+			"endpoint_id":   rproc.Endpoint.Id,
 			"request_id":    msg.Request,
 			"procedure":     msg.Procedure,
 			"invocation_id": invocationID,
-		}).Info("dispatched")
+		}).Debug("CALL: dispatched")
 	}
 }
 
@@ -177,12 +186,12 @@ func (d *defaultDealer) Yield(sess *Session, msg *Yield) {
 	defer d.invocationLock.Unlock()
 
 	if d.invocations[sess] == nil {
-		log.WithField("session_id", sess.Id).Error("received YIELD message from unknown session")
+		log.WithField("session_id", sess.Id).Error("YIELD: unknown session")
 		return
 	}
 	if call, ok := d.invocations[sess][msg.Request]; !ok {
 		// WAMP spec doesn't allow sending an error in response to a YIELD message
-		log.Errorf("received YIELD message with invalid invocation request ID: %d", msg.Request)
+		log.WithField("request_id", msg.Request).Error("YIELD: invalid invocation request ID")
 	} else {
 		// delete old keys
 		delete(d.invocations[sess], msg.Request)
@@ -197,7 +206,7 @@ func (d *defaultDealer) Yield(sess *Session, msg *Yield) {
 		log.WithFields(logrus.Fields{
 			"yield":      msg.Request,
 			"request_id": call.requestId,
-		}).Info("returned YIELD to caller")
+		}).Debug("YIELD: returned to caller")
 	}
 
 	if len(d.invocations[sess]) == 0 {
@@ -210,14 +219,14 @@ func (d *defaultDealer) Error(sess *Session, msg *Error) {
 	defer d.invocationLock.Unlock()
 
 	if d.invocations[sess] == nil {
-		log.WithField("session_id", sess.Id).Error("received ERROR message from unknown session")
+		log.WithField("session_id", sess.Id).Error("ERROR: unknown session")
 		return
 	}
 	if call, ok := d.invocations[sess][msg.Request]; !ok {
 		log.WithFields(logrus.Fields{
 			"session_id": sess.Id,
 			"request_id": msg.Request,
-		}).Error("received ERROR (INVOCATION) message with invalid invocation request ID")
+		}).Error("ERROR: invalid invocation request ID")
 	} else {
 		delete(d.invocations[sess], msg.Request)
 
@@ -233,7 +242,7 @@ func (d *defaultDealer) Error(sess *Session, msg *Error) {
 		log.WithFields(logrus.Fields{
 			"error":      msg.Request,
 			"request_id": call.requestId,
-		}).Info("returned ERROR to caller")
+		}).Error("ERROR: returned to caller")
 	}
 
 	if len(d.invocations[sess]) == 0 {
@@ -244,6 +253,8 @@ func (d *defaultDealer) Error(sess *Session, msg *Error) {
 func (d *defaultDealer) RemoveSession(sess *Session) {
 	d.Lock()
 	defer d.Unlock()
+
+	log.WithField("session_id", sess.Id).Info("RemoveSession")
 
 	// TODO: this is low hanging fruit for optimization
 	for _, rproc := range d.procedures {
