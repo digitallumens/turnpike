@@ -398,11 +398,8 @@ func (c *Client) Subscribe(topic string, options map[string]interface{}, fn Even
 // Unsubscribe removes the registered EventHandler from the topic.
 func (c *Client) Unsubscribe(topic string) error {
 	var (
-		sync           = make(chan struct{})
 		subscriptionID ID
 		found          bool
-		msg            Message
-		err            error
 	)
 	c.lock.RLock()
 	for id, desc := range c.events {
@@ -410,7 +407,6 @@ func (c *Client) Unsubscribe(topic string) error {
 			subscriptionID = id
 			found = true
 		}
-		sync <- struct{}{}
 	}
 	c.lock.RUnlock()
 	if !found {
@@ -425,12 +421,12 @@ func (c *Client) Unsubscribe(topic string) error {
 		Request:      id,
 		Subscription: subscriptionID,
 	}
-	err = c.Send(sub)
-	if err != nil {
+	if err := c.Send(sub); err != nil {
 		return err
 	}
 	// wait to receive UNSUBSCRIBED message
-	if msg, err = c.waitOnListener(id); err != nil {
+	msg, err := c.waitOnListener(id)
+	if err != nil {
 		return err
 	} else if e, ok := msg.(*Error); ok {
 		return fmt.Errorf("error unsubscribing to topic '%v': %v", topic, e.Error)
@@ -498,11 +494,8 @@ func (c *Client) BasicRegister(procedure string, fn BasicMethodHandler) error {
 // Unregister removes a procedure with the router
 func (c *Client) Unregister(procedure string) error {
 	var (
-		sync        = make(chan struct{})
 		procedureID ID
 		found       bool
-		msg         Message
-		err         error
 	)
 	c.lock.RLock()
 	for id, p := range c.procedures {
@@ -510,7 +503,6 @@ func (c *Client) Unregister(procedure string) error {
 			procedureID = id
 			found = true
 		}
-		sync <- struct{}{}
 	}
 	c.lock.RUnlock()
 	if !found {
@@ -524,12 +516,13 @@ func (c *Client) Unregister(procedure string) error {
 		Request:      id,
 		Registration: procedureID,
 	}
-	if err = c.Send(unregister); err != nil {
+	if err := c.Send(unregister); err != nil {
 		return err
 	}
 
 	// wait to receive UNREGISTERED message
-	if msg, err = c.waitOnListener(id); err != nil {
+	msg, err := c.waitOnListener(id)
+	if err != nil {
 		return err
 	} else if e, ok := msg.(*Error); ok {
 		return fmt.Errorf("error unregister to procedure '%v': %v", procedure, e.Error)
