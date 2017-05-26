@@ -40,7 +40,6 @@ type Client struct {
 	listeners    map[ID]chan Message
 	events       map[ID]*eventDesc
 	procedures   map[ID]*procedureDesc
-	acts         chan func()
 	requestCount uint
 
 	lock sync.RWMutex
@@ -74,21 +73,9 @@ func NewClient(p Peer) *Client {
 		listeners:      make(map[ID]chan Message),
 		events:         make(map[ID]*eventDesc),
 		procedures:     make(map[ID]*procedureDesc),
-		acts:           make(chan func()),
 		requestCount:   0,
 	}
-	go c.run()
 	return c
-}
-
-func (c *Client) run() {
-	for {
-		if act, ok := <-c.acts; ok {
-			act()
-		} else {
-			return
-		}
-	}
 }
 
 // SetLogLevel sets the package logger's level
@@ -107,17 +94,14 @@ func (c *Client) JoinRealm(realm string, details map[string]interface{}) (map[st
 	}
 	if err := c.Send(&Hello{Realm: URI(realm), Details: details}); err != nil {
 		c.Peer.Close()
-		close(c.acts)
 		return nil, err
 	}
 	if msg, err := GetMessageTimeout(c.Peer, c.ReceiveTimeout); err != nil {
 		c.Peer.Close()
-		close(c.acts)
 		return nil, err
 	} else if welcome, ok := msg.(*Welcome); !ok {
 		c.Send(abortUnexpectedMsg)
 		c.Peer.Close()
-		close(c.acts)
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, WELCOME))
 	} else {
 		go c.Receive()
@@ -138,41 +122,33 @@ func (c *Client) joinRealmCRA(realm string, details map[string]interface{}) (map
 	details["authmethods"] = authmethods
 	if err := c.Send(&Hello{Realm: URI(realm), Details: details}); err != nil {
 		c.Peer.Close()
-		close(c.acts)
 		return nil, err
 	}
 	if msg, err := GetMessageTimeout(c.Peer, c.ReceiveTimeout); err != nil {
 		c.Peer.Close()
-		close(c.acts)
 		return nil, err
 	} else if challenge, ok := msg.(*Challenge); !ok {
 		c.Send(abortUnexpectedMsg)
 		c.Peer.Close()
-		close(c.acts)
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, CHALLENGE))
 	} else if authFunc, ok := c.Auth[challenge.AuthMethod]; !ok {
 		c.Send(abortNoAuthHandler)
 		c.Peer.Close()
-		close(c.acts)
 		return nil, fmt.Errorf("no auth handler for method: %s", challenge.AuthMethod)
 	} else if signature, authDetails, err := authFunc(details, challenge.Extra); err != nil {
 		c.Send(abortAuthFailure)
 		c.Peer.Close()
-		close(c.acts)
 		return nil, err
 	} else if err := c.Send(&Authenticate{Signature: signature, Extra: authDetails}); err != nil {
 		c.Peer.Close()
-		close(c.acts)
 		return nil, err
 	}
 	if msg, err := GetMessageTimeout(c.Peer, c.ReceiveTimeout); err != nil {
 		c.Peer.Close()
-		close(c.acts)
 		return nil, err
 	} else if welcome, ok := msg.(*Welcome); !ok {
 		c.Send(abortUnexpectedMsg)
 		c.Peer.Close()
-		close(c.acts)
 		return nil, fmt.Errorf(formatUnexpectedMessage(msg, WELCOME))
 	} else {
 		go c.Receive()
@@ -282,27 +258,11 @@ func (c *Client) Receive() {
 		}
 	}
 
-	close(c.acts)
 	log.Infof("client closed")
 
 	if c.ReceiveDone != nil {
 		c.ReceiveDone <- true
 	}
-}
-
-func (c *Client) handleEvent(msg *Event) {
-	sync := make(chan struct{})
-	c.acts <- func() {
-		if event, ok := c.events[msg.Subscription]; ok {
-			go event.handler(msg.Arguments, msg.ArgumentsKw)
-		} else {
-			log.WithFields(logrus.Fields{
-				"subscription": msg.Subscription,
-			}).Info("no handler registered for subscription")
-		}
-		sync <- struct{}{}
-	}
-	<-sync
 }
 
 func (c *Client) notifyListener(msg Message, requestID ID) {
@@ -364,7 +324,7 @@ func (c *Client) handleInvocation(msg *Invocation) {
 }
 
 func (c *Client) registerListener(id ID) {
-	log.WithField("listener_id", id).Info("register listener")
+	log.WithField("listener_id", id).Debug("register listener")
 	wait := make(chan Message, 1)
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -372,15 +332,15 @@ func (c *Client) registerListener(id ID) {
 }
 
 func (c *Client) unregisterListener(id ID) {
+	log.WithField("listener_id", id).Debug("unregister listener")
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	log.Println("unregister listener:", id)
 	delete(c.listeners, id)
 }
 
 func (c *Client) waitOnListener(id ID) (msg Message, err error) {
-	log.WithField("listener_id", id).Info("wait on listener")
+	log.WithField("listener_id", id).Debug("wait on listener")
 	c.lock.RLock()
 	wait, ok := c.listeners[id]
 	c.lock.RUnlock()
@@ -389,13 +349,11 @@ func (c *Client) waitOnListener(id ID) (msg Message, err error) {
 	}
 	select {
 	case msg = <-wait:
+		return
 	case <-time.After(c.ReceiveTimeout):
 		err = fmt.Errorf("timeout while waiting for message")
+		return
 	}
-	c.acts <- func() {
-		delete(c.listeners, id)
-	}
-	return
 }
 
 // EventHandler handles a publish event.
