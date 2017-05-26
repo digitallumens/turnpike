@@ -77,11 +77,6 @@ func (br *defaultBroker) Publish(sess *Session, msg *Publish) {
 	}
 
 	for id, sub := range br.routes[msg.Topic] {
-		// don't send event to publisher
-		if sub == pub && excludePublisher {
-			continue
-		}
-
 		// shallow-copy the template
 		event := evtTemplate
 		event.Subscription = id
@@ -124,6 +119,16 @@ func (br *defaultBroker) Subscribe(sess *Session, msg *Subscribe) {
 	br.subscribers[sess] = ids
 
 	go sess.Peer.Send(&Subscribed{Request: msg.Request, Subscription: id})
+}
+
+func (br *defaultBroker) RemoveSession(sess *Session) {
+	log.WithField("session_id", sess.Id).Info("RemoveSession")
+	br.Lock()
+	defer br.Unlock()
+
+	for _, id := range br.subscribers[sess] {
+		br.unsubscribe(sess, id)
+	}
 }
 
 func (br *defaultBroker) Unsubscribe(sess *Session, msg *Unsubscribe) {
@@ -192,14 +197,4 @@ func (br *defaultBroker) unsubscribe(sess *Session, id ID) bool {
 	}
 
 	return true
-}
-
-func (br *defaultBroker) RemoveSession(sess *Session) {
-	log.WithField("session_id", sess.Id).Info("RemoveSession")
-	br.Lock()
-	defer br.Unlock()
-
-	for _, id := range br.subscribers[sess] {
-		br.unsubscribe(sess, id)
-	}
 }
