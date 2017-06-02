@@ -306,7 +306,7 @@ func (c *Client) handleInvocation(msg *Invocation) {
 			}
 
 			if err := c.Send(tosend); err != nil {
-				log.WithField("error", err).Info("error sending message")
+				log.WithField("err", err).Info("error sending message")
 			}
 		}()
 	} else {
@@ -318,7 +318,7 @@ func (c *Client) handleInvocation(msg *Invocation) {
 			Details: make(map[string]interface{}),
 			Error:   URI(fmt.Sprintf("no handler for registration: %v", msg.Registration)),
 		}); err != nil {
-			log.WithField("error", err).Error("Send returned an error")
+			log.WithField("err", err).Error("Send returned an error")
 		}
 	}
 }

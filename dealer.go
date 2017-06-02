@@ -78,7 +78,7 @@ func (d *defaultDealer) Register(sess *Session, msg *Register) {
 			"id":           id,
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
-			"error":        e,
+			"err":          e,
 		}).Error("REGISTER: procedure already exists")
 
 		return
@@ -150,7 +150,7 @@ func (d *defaultDealer) Call(sess *Session, msg *Call) {
 			"session_id":   sess.Id,
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
-			"error":        e,
+			"err":          e,
 		}).Warn("CALL: no such procedure")
 	} else {
 		// everything checks out, make the invocation request
@@ -240,7 +240,7 @@ func (d *defaultDealer) Error(sess *Session, msg *Error) {
 			ArgumentsKw: msg.ArgumentsKw,
 		})
 		log.WithFields(logrus.Fields{
-			"error":      msg.Request,
+			"err":        msg.Request,
 			"request_id": call.requestId,
 		}).Error("ERROR: returned to caller")
 	}

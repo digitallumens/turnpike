@@ -148,7 +148,7 @@ func (br *defaultBroker) Unsubscribe(sess *Session, msg *Unsubscribe) {
 		}
 		go sess.Peer.Send(err)
 		log.WithFields(logrus.Fields{
-			"error":        err,
+			"err":          err,
 			"subscription": msg.Subscription,
 		}).Error("Unsubscribe error: no such subscription")
 		return

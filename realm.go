@@ -138,7 +138,7 @@ func (r *Realm) doOne(c <-chan Message, sess *Session) bool {
 				"session_id":   sess.Id,
 				"message_type": msg.MessageType().String(),
 				"message":      redactedMsg,
-				"error":        err,
+				"err":          err,
 			}).Info("authorization failed")
 		} else {
 			errMsg.Error = ErrNotAuthorized
@@ -146,7 +146,7 @@ func (r *Realm) doOne(c <-chan Message, sess *Session) bool {
 				"session_id":   sess.Id,
 				"message_type": msg.MessageType().String(),
 				"message":      redactedMsg,
-				"error":        err,
+				"err":          err,
 			}).Info("UNAUTHORIZED")
 		}
 		logErr(sess.Send(errMsg))
