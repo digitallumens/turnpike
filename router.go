@@ -188,12 +188,16 @@ func (r *defaultRouter) Accept(client Peer) error {
 	}).Info("established session")
 
 	// session details
-	welcome.Details["session"] = welcome.Id
-	welcome.Details["realm"] = hello.Realm
+	sessionDetails := map[string]interface{}{}
+	for k, v := range welcome.Details {
+		sessionDetails[k] = v
+	}
+	sessionDetails["session"] = welcome.Id
+	sessionDetails["realm"] = hello.Realm
 	sess := &Session{
 		Peer:    client,
 		Id:      welcome.Id,
-		Details: welcome.Details,
+		Details: sessionDetails,
 		kill:    make(chan URI, 1),
 	}
 	for _, callback := range r.sessionOpenCallbacks {
