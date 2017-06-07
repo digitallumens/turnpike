@@ -1,7 +1,7 @@
 package turnpike
 
 import (
-	"github.com/digitallumens/logrus-stack"
+	// "github.com/digitallumens/logrus-stack"
 	logrus "github.com/sirupsen/logrus"
 )
 
@@ -14,10 +14,10 @@ func init() {
 	// Only log the info severity or above.
 	log.Level = logrus.InfoLevel
 
-	callerLevels := []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel}
-	stackLevels := []logrus.Level{}
-
-	log.Hooks.Add(logrus_stack.NewHook(callerLevels, stackLevels))
+	// callerLevels := []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel}
+	// stackLevels := []logrus.Level{}
+	//
+	// log.Hooks.Add(logrus_stack.NewHook(callerLevels, stackLevels))
 }
 
 func logErr(err error) error {
