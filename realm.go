@@ -6,7 +6,6 @@ import (
 	"time"
 
 	logrus "github.com/sirupsen/logrus"
-	"github.com/streamrail/concurrent-map"
 )
 
 const (
@@ -128,7 +127,7 @@ func (r *Realm) doOne(c <-chan Message, sess *Session) bool {
 		"session_id":   sess.Id,
 		"message_type": msg.MessageType().String(),
 		"message":      redactedMsg,
-	}).Info("new message")
+	}).Debug("new message")
 
 	if isAuthz, err := r.Authorizer.Authorize(sess, msg); !isAuthz {
 		errMsg := &Error{Type: msg.MessageType()}
@@ -139,7 +138,7 @@ func (r *Realm) doOne(c <-chan Message, sess *Session) bool {
 				"message_type": msg.MessageType().String(),
 				"message":      redactedMsg,
 				"err":          err,
-			}).Info("authorization failed")
+			}).Error("authorization failed")
 		} else {
 			errMsg.Error = ErrNotAuthorized
 			log.WithFields(logrus.Fields{
@@ -147,7 +146,7 @@ func (r *Realm) doOne(c <-chan Message, sess *Session) bool {
 				"message_type": msg.MessageType().String(),
 				"message":      redactedMsg,
 				"err":          err,
-			}).Info("UNAUTHORIZED")
+			}).Error("UNAUTHORIZED")
 		}
 		logErr(sess.Send(errMsg))
 		return true
@@ -192,7 +191,7 @@ func (r *Realm) doOne(c <-chan Message, sess *Session) bool {
 		}
 
 	default:
-		log.Infof("Unhandled message:", msg.MessageType())
+		log.Warningf("Unhandled message:", msg.MessageType())
 	}
 	return true
 }

@@ -151,7 +151,7 @@ func (d *defaultDealer) Call(sess *Session, msg *Call) {
 			"request_id":   msg.Request,
 			"message_type": msg.MessageType().String(),
 			"err":          e,
-		}).Warn("CALL: no such procedure")
+		}).Debug("CALL: no such procedure")
 	} else {
 		// everything checks out, make the invocation request
 		// TODO: make the Request ID specific to the caller
