@@ -6,6 +6,7 @@ import (
 	"time"
 
 	logrus "github.com/sirupsen/logrus"
+	"github.com/streamrail/concurrent-map"
 )
 
 const (
