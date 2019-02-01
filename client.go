@@ -36,11 +36,12 @@ type Client struct {
 	// Auth is a map of WAMP authmethods to functions that will handle each auth type
 	Auth map[string]AuthFunc
 	// ReceiveDone is notified when the client's connection to the router is lost.
-	ReceiveDone  chan bool
-	listeners    map[ID]chan Message
-	events       map[ID]*eventDesc
-	procedures   map[ID]*procedureDesc
-	requestCount uint
+	ReceiveDone   chan bool
+	listeners     map[ID]chan Message
+	events        map[ID]*eventDesc
+	procedures    map[ID]*procedureDesc
+	oldProcedures map[ID]*procedureDesc
+	requestCount  uint
 
 	lock sync.RWMutex
 }
@@ -65,6 +66,37 @@ func NewWebsocketClient(serialization Serialization, url string, tlscfg *tls.Con
 	return NewClient(p), nil
 }
 
+// ReconnectWebsocketClient is like NewWebsocketClient, but with a hack to keep a backup of procedures for unregistering
+func ReconnectWebsocketClient(serialization Serialization, url string, tlscfg *tls.Config, dial DialFunc, oldCl *Client) (*Client, error) {
+	p, err := NewWebsocketPeer(serialization, url, tlscfg, dial)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(p)
+	if oldCl != nil {
+		// map of IDs and names is needed for unregistering; copy it from old client
+		for id, p := range oldCl.procedures {
+			c.oldProcedures[id] = p
+		}
+	}
+	return c, nil
+}
+
+// UnregisterOldProcedures unregisters old procedures from disconnected client
+func (c *Client) UnregisterOldProcedures() error {
+	for id, p := range c.oldProcedures {
+		if _, ok := c.procedures[id]; !ok {
+			c.procedures[id] = p
+		}
+		// unregister procedure and fail on first error
+		err := c.Unregister(p.name)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // NewClient takes a connected Peer and returns a new Client
 func NewClient(p Peer) *Client {
 	c := &Client{
@@ -73,6 +105,7 @@ func NewClient(p Peer) *Client {
 		listeners:      make(map[ID]chan Message),
 		events:         make(map[ID]*eventDesc),
 		procedures:     make(map[ID]*procedureDesc),
+		oldProcedures:  make(map[ID]*procedureDesc),
 		requestCount:   0,
 	}
 	return c
