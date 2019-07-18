@@ -6,7 +6,7 @@ import (
 	"time"
 
 	logrus "github.com/sirupsen/logrus"
-	"github.com/streamrail/concurrent-map"
+	cmap "github.com/streamrail/concurrent-map"
 )
 
 const (
@@ -192,7 +192,7 @@ func (r *Realm) doOne(c <-chan Message, sess *Session) bool {
 		}
 
 	default:
-		log.Warningf("Unhandled message:", msg.MessageType())
+		log.Warning("Unhandled message:", msg.MessageType())
 	}
 	return true
 }
