@@ -169,7 +169,7 @@ func (ep *websocketPeer) run() {
 				log.Debugf("peer connection closed")
 			} else {
 				host, _, _ := net.SplitHostPort(ep.conn.RemoteAddr().String())
-				log.Info("host: ", host)
+				log.Println("host: ", host)
 				log.WithFields(logrus.Fields{
 					"remote_addr": host,
 				}).Warning("error reading from peer")
