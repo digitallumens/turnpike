@@ -132,7 +132,7 @@ func (ep *websocketPeer) updateReadDeadline() {
 	ep.mutex.Lock()
 	defer ep.mutex.Unlock()
 	if ep.IdleTimeout > 0 {
-		log.info("=== TIME OUT")
+		log.Println("=== TIME OUT")
 		ep.conn.SetReadDeadline(time.Now().Add(ep.IdleTimeout))
 	}
 }
