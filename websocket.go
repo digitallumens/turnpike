@@ -132,6 +132,7 @@ func (ep *websocketPeer) updateReadDeadline() {
 	ep.mutex.Lock()
 	defer ep.mutex.Unlock()
 	if ep.IdleTimeout > 0 {
+		log.info("=== TIME OUT")
 		ep.conn.SetReadDeadline(time.Now().Add(ep.IdleTimeout))
 	}
 }
@@ -168,6 +169,7 @@ func (ep *websocketPeer) run() {
 				log.Debugf("peer connection closed")
 			} else {
 				host, _, _ := net.SplitHostPort(ep.conn.RemoteAddr().String())
+				log.Info("host: ", host)
 				log.WithFields(logrus.Fields{
 					"remote_addr": host,
 				}).Warning("error reading from peer")
