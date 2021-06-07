@@ -164,6 +164,7 @@ func (ep *websocketPeer) run() {
 		// TODO: use conn.NextMessage() and stream
 		// TODO: do something different based on binary/text frames
 		ep.updateReadDeadline()
+		log.Println("after : updateReadDeadline()")
 		if msgType, b, err := ep.conn.ReadMessage(); err != nil {
 			if ep.isClosed() {
 				log.Debugf("peer connection closed")
